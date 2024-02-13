@@ -17,14 +17,23 @@
 ### Train
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.run --nproc_per_node 4 --master_port 1200 train_llama.py --ckpt_dir $LLAMA_CKPTS/30B --tokenizer_path $LLAMA_CKPTS/tokenizer.model --input_file data/gsm8k-xl/train.json --lr 1e-3 --num_epochs 10
+CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run --nproc_per_node 2 --master_port 1200 train_llama.py --ckpt_dir $LLAMA_CKPTS/llama-2-13b-chat --tokenizer_path $LLAMA_CKPTS/tokenizer.model --input_file data/gsm8k-xl/train.json --lr 1e-3 --num_epochs 10
 ```
 
 ### Inference
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.run --nproc_per_node 4 --master_port 1250 inference_llama.py --ckpt_dir $LLAMA_CKPTS/30B --tokenizer_path $LLAMA_CKPTS/tokenizer.model --mode func_embedding --dataset gsm8k-xl  --func_load_path checkpoints/gsm8k-xl/epoch_3.pth --logits_bias 3.0
+CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run --nproc_per_node 2 --master_port 1250 inference_llama.py --ckpt_dir $LLAMA_CKPTS/llama-2-13b-chat --tokenizer_path $LLAMA_CKPTS/tokenizer.model --mode func_embedding --dataset gsm8k-xl  --func_load_path checkpoints/gsm8k-xl/epoch_3.pth --logits_bias 3.0
 ```
+
+## Cross-Questions 
+
+### Inference (train gsm8k-xl // test 1-hop multi-hop)
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run --nproc_per_node 2 --master_port 1250 inference_llama_cross_questions.py --ckpt_dir $LLAMA_CKPTS/llama-2-13b-chat --tokenizer_path $LLAMA_CKPTS/tokenizer.model --mode func_embedding --dataset cross-questions  --func_load_path checkpoints/gsm8k-xl/epoch_3.pth --logits_bias 3.0
+```
+
 
 ## FuncQA
 

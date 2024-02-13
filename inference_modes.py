@@ -2,28 +2,36 @@ import re
 from funchub.math import *
 
 def func_embedding_inference(templates, case_idx, question, funcmodel, temperature, top_p, max_gen_len, return_top=5):
+    # step-by-step reasoning with no generation
     cur_generation = ""
     cur_generation_with_func = ""
+    num_invocations = 0
     start_length = []
     end_length = []
     logs = []
     funcmodel.inference_mode = "func_embedding"
     func_map = list(funcmodel.func_dict.keys())
+    
     try:
         results = []
         func_calls = []
         while True:
-            prompt = templates["general"].replace("[QUESTION]", question) + cur_generation
+            
+            prompt = templates["general"].replace("[QUESTION]", question) + cur_generation # reasons step by step 
             results = funcmodel.generate([prompt], max_gen_len=max_gen_len, temperature=temperature, top_p=top_p, stop_token=[13], return_top=return_top)
             if return_top > 0:
                 results, token_log = results
                 logs.append(token_log)
+            
+            
             endflag = True
             current_token = 0
             record_tokens = token_log[-1]
             cur_generation = results[0].replace(templates["general"].replace("[QUESTION]", question), "")
             for op in func_map:
                 if cur_generation.endswith(op+"("):
+                    print("\n\n\t" + cur_generation)
+                    num_invocations += 1
                     endflag = False
                     if start_length and end_length:
                         bias = 0
@@ -96,6 +104,8 @@ def func_embedding_inference(templates, case_idx, question, funcmodel, temperatu
             "status": "success"
         }
 
+        
+    
     except Exception as e:
         log = {
             "case_idx": case_idx,
@@ -104,7 +114,8 @@ def func_embedding_inference(templates, case_idx, question, funcmodel, temperatu
             "generation": cur_generation.replace("\n", "\\n").strip(),
             "status": str(e)
         }
-    return log
+    
+    return log, num_invocations
 
 
 def vh_embedding_inference(case_idx, question, funcmodel, temperature, top_p, max_func_call):

@@ -66,7 +66,29 @@ def main(ckpt_dir: str, tokenizer_path: str, temperature: float = 0, top_p: floa
         sys.stdout = open(os.devnull, 'w')
 
     templates = {}
-    if dataset == "gsm8k-xl":
+    
+    # use gsm8k-xl functions and templates with
+    # funcqa datasets to evaluate the miss-use of tools
+    if dataset == "cross-questions":
+        max_gen_len = 512
+        
+        # gsm8k-xl functions and templates
+        for name in os.listdir("../data/gsm8k-xl/template"):
+            with open(f"../data/gsm8k-xl/template/{name}") as f:
+                templates[name.split("_")[-1].replace(".txt", "")] = f.read()
+        func_dict = json.load(open("../data/gsm8k-xl/func_dict.json"))
+        
+        # funcqa dataset
+        # with open(f"../data/funcqa/funcqa_oh.json") as f:
+        #     data = [json.loads(line) for line in f.readlines()]
+        with open("../data/kamel/reformat_test_first_20.json") as f:
+            data = json.load(f)
+        test_cases = [i["question"] for i in data]
+        
+        
+        
+    
+    elif dataset == "gsm8k-xl":
         for name in os.listdir("../data/gsm8k-xl/template"):
             with open(f"../data/gsm8k-xl/template/{name}") as f:
                 templates[name.split("_")[-1].replace(".txt", "")] = f.read()
@@ -162,13 +184,18 @@ def main(ckpt_dir: str, tokenizer_path: str, temperature: float = 0, top_p: floa
     funcmodel.set_bias(logits_bias)
     funcmodel.eval()
 
+    
+    num_invocations = 0
+    num_unique_invocations = 0
     for case_idx, question in tqdm(enumerate(test_cases), total=len(test_cases)):
         if case_idx < st_idx:
             continue
         if case_idx >= ed_idx:
             break
         if mode == "func_embedding":
-            log = func_embedding_inference(templates, case_idx, question, funcmodel, temperature, top_p, max_gen_len, return_top)
+            log, n_question_invocations = func_embedding_inference(templates, case_idx, question, funcmodel, temperature, top_p, max_gen_len, return_top)
+            num_invocations += n_question_invocations
+            num_unique_invocations += int(n_question_invocations>0)
         elif mode == "vh_embedding_inference":
             log = vh_embedding_inference(case_idx, question, funcmodel, temperature, top_p, max_func_call)
         elif mode == "kamel_embedding_inference":
@@ -186,6 +213,8 @@ def main(ckpt_dir: str, tokenizer_path: str, temperature: float = 0, top_p: floa
             with open(f"{output_dir}/inference-{size}-{func_model_name}-{mode}-{dataset}-bias_{logits_bias}{suffix}.jsonl", "a") as f:
                 f.write(json.dumps(log) + "\n")
 
+    print(f"Number of invocations: {num_invocations}")
+    print(f"Number of unique invocations: {num_unique_invocations} out of {len(test_cases)}")
 
 if __name__ == "__main__":
     fire.Fire(main)

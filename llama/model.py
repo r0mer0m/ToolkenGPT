@@ -248,9 +248,9 @@ class FunctionLM(nn.Module):
         self.tokenizer = tokenizer
         self.func_dict = func_dict
         self.func_list = {v: k for k, v in func_dict.items()}
-        # self.func_embed = ColumnParallelLinear(
-        #     base_model.params.dim, len(func_list), bias=False, init_method=lambda x: x
-        # )
+        self.num_base_tokens = tokenizer.n_words
+        self.loss_ignore_index = -100
+
         self.func_embed = nn.Linear(base_model.params.dim, len(func_dict), bias=False).to("cuda")
         if load_path is not None and load_path != "None": # load func_embed weights
             embedding = torch.load(load_path)
@@ -272,7 +272,12 @@ class FunctionLM(nn.Module):
         self.logits_bias = 0
 
     def set_bias(self, logits_bias):
-        self.logits_bias = logits_bias
+        '''
+        logits_bias for the function tokens.
+        
+        Positive numbers increase the likelyhood of the function tokens over word tokens while negative numbers decrease the likelyhood.7yy6
+        '''
+        self.logits_bias = logits_bias 
 
     def get_loss(self, raw_inputs, only_functoken=False):
         assert len(raw_inputs) == 1
@@ -285,9 +290,10 @@ class FunctionLM(nn.Module):
 
             raw_input_ids = torch.tensor(self.tokenizer.encode(raw_inputs["text"], bos=True, eos=True))[:]
             labels = torch.tensor(self.tokenizer.encode(raw_inputs["text"], bos=True, eos=True))[:]
-
+            
+            # some of the test sets such as kamel have "api" (API_XX) name instead of "tar_eq" (<API_XX>(2, 3)=6<eoe>)
             if "tar_eq" not in raw_inputs:
-                raw_inputs["tar_eq"] = ["<" + raw_inputs["api"] + ">"]
+                raw_inputs["tar_eq"] = ["<" + raw_inputs["api"] + ">"] 
 
             for s, t, eq in zip(raw_inputs["start_token_idx"], raw_inputs["end_token_idx"], raw_inputs["tar_eq"]):
                 
@@ -300,14 +306,18 @@ class FunctionLM(nn.Module):
 
                 if op not in self.func_dict:
                     op = op[1:-1]
-                labels[s] = self.func_dict[op] + 32000
-                labels[s+1: t] = -100
+                labels[s] = self.func_dict[op] + self.num_base_tokens
+                labels[s+1: t] = self.loss_ignore_index
             
             # labels = labels[1:]
             if only_functoken:
-                labels[labels < 32000] = -100
+                labels[labels < self.num_base_tokens] = self.loss_ignore_index
             inputs = raw_input_ids[:-1].expand(1, -1).to("cuda")
             labels = labels[1:].expand(1, -1).to("cuda")
+            
+            print("\ninputs", self.tokenizer.decode(raw_input_ids[:-1].to('cpu')))
+            print("\nlabels", self.tokenizer.decode(labels[1:].to('cpu')))
+            exit()
 
             last_logits, h = self.model(inputs, 0) # h: (bsz, seqlen, dim)
             token_logits = self.model.output(h) # (bsz, seqlen, vocab_size)
@@ -316,14 +326,15 @@ class FunctionLM(nn.Module):
         func_logits = self.func_embed(h.float()) # (bsz, seqlen, len(func_list))
         
         concat_logits = torch.cat([token_logits, func_logits], dim=-1) # (bsz, seqlen, vocab_size + len(func_list))
-        loss = F.cross_entropy(concat_logits.view(-1, concat_logits.shape[-1]), labels.view(-1), ignore_index=-100)
+        loss = F.cross_entropy(concat_logits.view(-1, concat_logits.shape[-1]), labels.view(-1), 
+                               ignore_index=self.loss_ignore_index)
         # check p, r, f1 for each function
         pred = torch.argmax(concat_logits, dim=-1) # (bsz, seqlen)
         pred = pred.view(-1)
         labels = labels.view(-1)
 
-        label_funcs = [labels == self.func_dict[op] + 32000 for op in self.func_dict.keys()]
-        pred_funcs = [pred == self.func_dict[op] + 32000 for op in self.func_dict.keys()]
+        label_funcs = [labels == self.func_dict[op] + self.num_base_tokens for op in self.func_dict.keys()]
+        pred_funcs = [pred == self.func_dict[op] + self.num_base_tokens for op in self.func_dict.keys()]
         label_funcs = torch.stack(label_funcs, dim=0)
         pred_funcs = torch.stack(pred_funcs, dim=0)
         
@@ -423,7 +434,7 @@ class FunctionLM(nn.Module):
             tokens[:, cur_pos] = next_token
             prev_pos = cur_pos
 
-            if next_token[0] >= 32000 or next_token[0] in stop_token_single:
+            if next_token[0] >= self.num_base_tokens or next_token[0] in stop_token_single:
                 # print("breaking!!")
                 break
 
@@ -440,14 +451,14 @@ class FunctionLM(nn.Module):
                 t = t[: t.index(self.tokenizer.eos_id)]
             except ValueError:
                 pass
-            if t[cur_pos] >= 32000:
+            if t[cur_pos] >= self.num_base_tokens:
                 if no_left_parens:
-                    decoded.append(self.tokenizer.decode(t[:cur_pos]) + self.func_list[t[cur_pos] - 32000])
+                    decoded.append(self.tokenizer.decode(t[:cur_pos]) + self.func_list[t[cur_pos] - self.num_base_tokens])
                 else:
                     if "<" in self.func_list[0]:
-                        decoded.append(self.tokenizer.decode(t[:cur_pos]) + self.func_list[t[cur_pos] - 32000] + "(")
+                        decoded.append(self.tokenizer.decode(t[:cur_pos]) + self.func_list[t[cur_pos] - self.num_base_tokens] + "(")
                     elif "[" in self.func_list[0]:
-                        decoded.append(self.tokenizer.decode(t[:cur_pos]) + self.func_list[t[cur_pos] - 32000] + " <")
+                        decoded.append(self.tokenizer.decode(t[:cur_pos]) + self.func_list[t[cur_pos] - self.num_base_tokens] + " <")
                     else:
                         raise NotImplementedError
             else:
