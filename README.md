@@ -93,8 +93,23 @@ See `evaluation/eval_kamel.ipynb`
 ---------------------------------------------
 
 
+```bash
+export LLAMA_CKPTS=../models/llama_checkpoints
+```
+
+
+
 ## Augment Tokenizer
 
+```bash
+cd ToolkenGPT
+python scripts/augment_tokenizer.py --in_tok_path $LLAMA_CKPTS/tokenizer.model --new_tokens \<BOC\> \<EOC\> \<BOR\> \<EOR\> --out_tok_dir ./augmented_tokenizer/
 ```
-python augment_tokenizer.py --
+
+## GSM8K-XL
+
+### Train
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run --nproc_per_node 2 --master_port 1200 train_augmented_llama.py --ckpt_dir $LLAMA_CKPTS/llama-2-13b-chat --tokenizer_path ./augmented_tokenizer --input_file ../data/gsm8k-xl/train.json --lr 1e-3 --num_epochs 10
 ```
