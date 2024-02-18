@@ -21,7 +21,7 @@ from fairscale.nn.model_parallel.layers import (
     get_model_parallel_world_size
 )
 from transformers import AutoTokenizer, AutoModel
-import re
+from typing import Dict, Union
 
 
 @dataclass
@@ -213,35 +213,37 @@ class Transformer(nn.Module):
 
         # initialize augmented embeddings
         # reference re-implement with https://discuss.pytorch.org/t/expanding-pretrained-embedding/83370
-        self.tok_embeddings = self._initialize_augmented_embeddings(params)
+        self.tok_embeddings = ParallelEmbedding(
+            params.vocab_size, params.dim, init_method=lambda x: x
+        )
 
         self.layers = torch.nn.ModuleList()
         for layer_id in range(params.n_layers):
             self.layers.append(TransformerBlock(layer_id, params))
 
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
-        self.vocab_projection = self._initialize_augmented_vocab_projection(params)
-        # self.output = ColumnParallelLinear(
-        #     params.dim, params.aug_vocab_size, bias=False, init_method=lambda x: x
-        # )
+        # self.vocab_projection = self._initialize_augmented_vocab_projection(params)
+        self.output = ColumnParallelLinear(
+            params.dim, params.aug_vocab_size, bias=False, init_method=lambda x: x
+        )
+        self.tool_output = nn.Linear(params.dim, params.aug_vocab_size, bias=False)
 
         self.freqs_cis = precompute_freqs_cis(
             self.params.dim // self.params.n_heads, self.params.max_seq_len * 2
         )
 
 
-    def _initialize_augmented_embeddings(self, params: ModelArgs):
-        tok_embeddings = ParallelEmbedding(
-            params.vocab_size, params.dim, init_method=lambda x: x
-        )
+    def _augmented_embeddings(self,):
         
         # initialize augmented embeddings
-        aug_weight = torch.Tensor(params.aug_vocab_size, tok_embeddings.embedding_dim_per_partition)
+        aug_weight = torch.Tensor(self.params.aug_vocab_size, self.tok_embeddings.embedding_dim_per_partition)
+        
+        # TODO: change initialzation for semantic initialization
         _initialize_affine_weight(
             aug_weight.weight,
-            tok_embeddings.num_embeddings,
-            tok_embeddings.embedding_dim,
-            tok_embeddings.embedding_dim_per_partition,
+            self.tok_embeddings.num_embeddings,
+            self.tok_embeddings.embedding_dim,
+            self.tok_embeddings.embedding_dim_per_partition,
             1,
             lambda x: x,
             stride=1,
@@ -249,28 +251,10 @@ class Transformer(nn.Module):
         )
         
         # Expand embedding layer
-        tok_embeddings.weight = nn.Parameter(
-            torch.cat((tok_embeddings.weight.weight, aug_weight))
+        self.tok_embeddings.weight = nn.Parameter(
+            torch.cat((self.tok_embeddings.weight.weight, aug_weight))
             )
-        
-        return tok_embeddings
     
-    # TODO: Implement this, vocab size is parallelized across GPUs.
-    def _initialize_augmented_vocab_projection(self, params: ModelArgs):
-        vocab_projection = ColumnParallelLinear(
-            params.dim, params.vocab_size, bias=False, init_method=lambda x: x
-        )
-        
-        # only do augmentation in the last model-parallel (global) rank. 
-        # For that rank only, expand the projection layer to include the augmented vocab
-        # the output_size_per_partition also has to be adjusted + num_aug_vocab for this rank
-        rank, world_size = get_model_parallel_rank(), get_model_parallel_world_size()
-        if rank == world_size - 1:
-            # augment the projection layer
-            raise NotImplementedError("Implement this")
-        
-        
-        return vocab_projection
     
     def freeze_base_model(self) -> None:
         # add hook to freeze base embeddings only
@@ -283,7 +267,7 @@ class Transformer(nn.Module):
         
         # freeze base model, skipping above layers
         for name, param in self.named_parameters():
-            if "tok_embeddings" in name or "vocab_projection" in name:
+            if "tok_embeddings" in name or "tool_embed" in name:
                 continue
             else:
                 param.requires_grad = False
@@ -304,9 +288,15 @@ class Transformer(nn.Module):
         for layer in self.layers:
             h = layer(h, start_pos, freqs_cis, mask)
         h = self.norm(h)
-        output = self.base_output(h[:, -1, :])  # only compute last logits
+        
+        # only compute last logits
+        output_base = self.output(h[:, -1, :]) 
+        output_embed = self.tool_output(h[:, -1, :])
+        
+        output = torch.cat([output_base, output_embed], dim=-1) # expand output vocab dimension
+        
         return output.float(), h
-    
+'''
 class FunctionLM(nn.Module):
     def __init__(self, base_model, tokenizer, func_dict, load_path=None, inference_mode="func_embedding"):
         super().__init__()
@@ -315,12 +305,10 @@ class FunctionLM(nn.Module):
         self.tokenizer = tokenizer
         self.func_dict = func_dict
         self.func_list = {v: k for k, v in func_dict.items()}
-        # self.func_embed = ColumnParallelLinear(
-        #     base_model.params.dim, len(func_list), bias=False, init_method=lambda x: x
-        # )
         
         # TODO: Update load method in above model
         self.func_embed = nn.Linear(base_model.params.dim, len(func_dict), bias=False).to("cuda")
+        # Load in the base model.
         if load_path is not None and load_path != "None": # load func_embed weights
             embedding = torch.load(load_path)
             if isinstance(embedding, torch.Tensor):
@@ -354,7 +342,7 @@ class FunctionLM(nn.Module):
             # prompt_tokens = [self.tokenizer.encode(x, bos=True, eos=True) for x in raw_inputs]
 
             raw_input_ids = torch.tensor(self.tokenizer.encode(raw_inputs["text"], bos=True, eos=True))[:]
-            labels = torch.tensor(self.tokenizer.encode(raw_inputs["text"], bos=True, eos=True))[:]
+            labels = raw_input_ids.clone()
 
             if "tar_eq" not in raw_inputs:
                 raw_inputs["tar_eq"] = ["<" + raw_inputs["api"] + ">"]
@@ -527,7 +515,177 @@ class FunctionLM(nn.Module):
             return decoded, generation_log
         else:
             return decoded
+'''    
+
+class AugmentedLM(nn.Module):
+    def __init__(self, base_model, tokenizer, func_dict, load_path=None, inference_mode="func_embedding"):
+        super().__init__()
+        self.inference_mode = inference_mode
+        self.model = base_model
+        self.tokenizer = tokenizer
+        self.func_dict = func_dict
+        self.func_list = {v: k for k, v in func_dict.items()}
+        
+        # TODO: Update load method in above model
+        # self.func_embed = nn.Linear(base_model.params.dim, len(func_dict), bias=False).to("cuda")
+        # Load in the base model.
+        if load_path is not None and load_path != "None": # load func_embed weights
+            embedding = torch.load(load_path)
+            if isinstance(embedding, torch.Tensor):
+                embedding = embedding.to("cuda")
+                embedding = {"weight": embedding}
+
+            # truncate the embedding if necessary
+            if embedding["weight"].shape[0] > len(func_dict):
+                print(f"Truncated the function embedding from {embedding['weight'].shape[0]} to {len(func_dict)}")
+                embedding["weight"] = embedding["weight"][:len(func_dict)]
+
+            self.func_embed.load_state_dict(embedding)
+        
+        # set the basemodel to eval mode and freeze the weights
+        self.model.eval()
+        self.model.freeze_base_model()
+        self.logits_bias = 0
+        
+    def get_loss(
+        self,
+        raw_inputs:List[Dict[str, Union[str, int]]],
+        only_functoken:bool=False,
+    ):
+        assert len(raw_inputs) == 1
+        raw_inputs = raw_inputs[0]
+        
+        raw_input_ids = torch.tensor(self.tokenizer.encode(raw_inputs["text"], bos=True, eos=True))[:]
+        labels = raw_input_ids.clone()
+        for bor_idx, eor_idx in zip(raw_inputs["start_token_idx"], raw_inputs["end_token_idx"]):
+            labels[bor_idx+1: eor_idx] = -100 # mask out API results tokens
+        
+        inputs = raw_input_ids[:-1].expand(1, -1).to("cuda")
+        labels = labels[1:].expand(1, -1).to("cuda")
+        
+        _, h = self.model(inputs, 0)
+        base_logits = self.model.output(h) 
+        tool_logits = self.model.tool_embed(h)
+        full_logits = torch.cat([base_logits, tool_logits], dim=-1)
+        
+        loss = F.cross_entropy(full_logits.view(-1, full_logits.shape[-1]), labels.view(-1), ignore_index=-100)
+        
+        pred = torch.argmax(full_logits, dim=-1) # (bsz, seqlen)
+        pred = pred.view(-1)
+        labels = labels.view(-1)
+
+        label_funcs = [labels == id for id in raw_inputs["func_ids"]]
+        pred_funcs = [pred == id for id in raw_inputs["func_ids"]]
+        label_funcs = torch.stack(label_funcs, dim=0)
+        pred_funcs = torch.stack(pred_funcs, dim=0)
+        
+        tp = torch.sum(label_funcs * pred_funcs, dim=-1).detach().cpu().numpy()
+        pred_funcs = torch.sum(pred_funcs, dim=-1).detach().cpu().numpy()
+        true = torch.sum(label_funcs, dim=-1).detach().cpu().numpy()
+        results = {
+            "tp": tp,
+            "pred": pred_funcs,
+            "true": true
+        }
+
+        return loss, results
     
+        
+    @torch.no_grad()
+    def generate(
+        self,
+        prompt: str,
+        max_gen_len: int,
+        temperature: float = 0.8,
+        top_p: float = 0.95,
+        stop_token: List[int] = [],
+        return_top: int = 0,
+        disable_func: List[int] = [], # func ids to diable
+        disable_token: List[int] = [], # base tokens ids to disable
+    ) -> List[str]:
+        """
+        Generation method with stopping condidtions in tools or `<EOC>`
+        """
+        generation_log = []
+        stop_token_substr = [torch.tensor(x).cuda().long() for x in stop_token if isinstance(x, list)]
+        stop_token_single = [x for x in stop_token if isinstance(x, int)]
+        
+        prompt_tokens = self.tokenizer.encode(prompt, bos=True, eos=False)
+        prompt_len = len(prompt_tokens)
+        max_len = min(self.model.max_seq_len, prompt_len + max_gen_len)
+        
+        tokens = torch.full((1, max_len), self.tokenizer.pad_id).cuda().long()
+        tokens[0, :prompt_len] = torch.tensor(prompt_tokens).cuda().long()
+        
+        prev_pos = 0
+        
+        start_pos = prompt_len
+        for cur_pos in range(start_pos, max_len):
+            logits = self.model.forward(prompt_tokens[:, prev_pos:cur_pos], prev_pos)
+            
+            # ------ move to callbacks ------
+            if self.inference_mode != "func_embedding":
+                # reduce logits to "arbitrary small likelyhood" 
+                logits[:, -self.model.aug_vocab_size:] = - 1e5
+                
+            if len(disable_token) > 0:
+                logits[:, disable_token] = -1e5
+            
+            if len(disable_func) > 0:
+                logits[:, disable_func] = -1e5
+                
+            logits[:-self.model.aug_vocab_size] += self.logits_bias
+        
+            # -------------------------------
+            
+            if temperature > 0:
+                probs = torch.softmax(logits / temperature, dim=-1)
+                next_token = sample_top_p(probs, top_p)
+            else:
+                next_token = torch.argmax(logits, dim=-1)
+            next_token = next_token.reshape(-1)
+            
+            # only replace token if the prompt is ended
+            # next_token = torch.where(
+            #     input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token
+            # )
+            if return_top > 0:
+                generation_log.append(
+                    (next_token[0].item(), [(i.item(), logits[0, i.item()].item()) for i in torch.argsort(logits[0, :], descending=True)[:return_top]])
+                )
+            
+            tokens[:, cur_pos] = next_token
+            prev_pos = cur_pos
+
+            # loop breaking conditions: find a tool or a stop tooken/substring
+            if next_token[0] == self.tokenizer.eoc_id or next_token[0] in stop_token_single:
+                break
+            
+            if any([torch.equal(tokens[0, cur_pos - len(substr) + 1: cur_pos + 1], substr) for substr in stop_token_substr]):
+                break
+        
+        decoded = []
+        for i, t in enumerate(tokens.tolist()):
+            # cut to max gen len
+            t = t[: len(prompt_tokens[i]) + max_gen_len]
+            # cut to eos tok if any
+            try:
+                t = t[: t.index(self.tokenizer.eos_id)]
+            except ValueError:
+                pass
+            
+            decoded_sample = self.tokenizer.decode(t[:cur_pos + 1])
+            if t[cur_pos] >= self.model.base_vocab_size:
+                decoded_sample += "("
+            
+            decoded.append(decoded_sample)
+        
+        if return_top > 0:
+            return decoded, generation_log
+        else:
+            return decoded
+        
+
 def sample_top_p(probs, p):
     probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
     probs_sum = torch.cumsum(probs_sort, dim=-1)
