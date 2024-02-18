@@ -2,5 +2,5 @@
 # This software may be used and distributed according to the terms of the GNU General Public License version 3.
 
 from .generation import LLaMA
-from .model import ModelArgs, Transformer, FunctionLM
+from .model import ModelArgs, Transformer, AugmentedLM
 from .tokenizer import AugmentedTokenizer
