@@ -98,12 +98,16 @@ export LLAMA_CKPTS=../models/llama_checkpoints
 ```
 
 
+```bash
+python generate_data_funcqa.py
+```
+
 
 ## Augment Tokenizer
 
 ```bash
 cd ToolkenGPT
-python scripts/augment_tokenizer.py --in_tok_path $LLAMA_CKPTS/tokenizer.model --new_tokens \<BOC\> \<EOC\> \<BOR\> \<EOR\> --out_tok_dir ./augmented_tokenizer/
+python scripts/augment_tokenizer.py --in_tok_path $LLAMA_CKPTS/tokenizer.model --new_tokens \<BOC\> \<EOC\> \<BOR\> \<EOR\> \<add\> \<subtract\> \<multiply\> \<divide\> \<power\> \<sqrt\> \<log\> \<ln\> \<lcm\> \<gcd\> \<remainder\> \<choose\> \<permutate\> --out_tok_dir ./augmented_tokenizer/
 ```
 
 ## GSM8K-XL
