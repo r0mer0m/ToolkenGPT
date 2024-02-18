@@ -94,26 +94,38 @@ See `evaluation/eval_kamel.ipynb`
 
 
 ```bash
-export LLAMA_CKPTS=../models/llama_checkpoints
+export LLAMA_CKPTS=../models/llama_checkpoints && echo $LLAMA_CKPTS
 ```
 
 
+## Tokenizer Augmentation
+
+```bash
+cd ToolkenGPT
+python scripts/augment_tokenizer.py --in_tok_path $LLAMA_CKPTS/tokenizer.model --new_tokens \<add\> \<subtract\> \<multiply\> \<divide\> \<power\> \<sqrt\> \<log\> \<ln\> \<lcm\> \<gcd\> \<remainder\> \<choose\> \<permutate\> --out_tok_dir ./augmented_tokenizer/
+```
+
+## Data Processing
 ```bash
 python generate_data_funcqa.py
 ```
 
-
-## Augment Tokenizer
-
-```bash
-cd ToolkenGPT
-python scripts/augment_tokenizer.py --in_tok_path $LLAMA_CKPTS/tokenizer.model --new_tokens \<BOC\> \<EOC\> \<BOR\> \<EOR\> \<add\> \<subtract\> \<multiply\> \<divide\> \<power\> \<sqrt\> \<log\> \<ln\> \<lcm\> \<gcd\> \<remainder\> \<choose\> \<permutate\> --out_tok_dir ./augmented_tokenizer/
-```
 
 ## GSM8K-XL
 
 ### Train
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run --nproc_per_node 2 --master_port 1200 train_augmented_llama.py --ckpt_dir $LLAMA_CKPTS/llama-2-13b-chat --tokenizer_path ./augmented_tokenizer --input_file ../data/gsm8k-xl/train.json --lr 1e-3 --num_epochs 10
+CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run --nproc_per_node 2 --master_port 1200 train_augmented_llama.py --ckpt_dir $LLAMA_CKPTS/llama-2-13b-chat --tokenizer_path ./augmented_tokenizer --input_file ../augmented_data/gsm8k-xl/train.json --lr 1e-3 --num_epochs 10
+```
+
+
+## FuncQA
+
+### Train
+
+For debugging use `CUDA_LAUNCH_BLOCKING=1`.
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run --nproc_per_node 2 --master_port 1200 train_augmented_llama.py --ckpt_dir $LLAMA_CKPTS/llama-2-13b-chat --tokenizer_path ./augmented_tokenizer --input_file ../augmented_data/funcqa/train.json --lr 1e-4 --num_epochs 10
 ```

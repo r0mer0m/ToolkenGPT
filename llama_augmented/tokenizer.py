@@ -53,16 +53,16 @@ class AugmentedTokenizer:
         # BOS / EOS token IDs
         self.n_base_words: int = self.augmentation_config['n_base_words']
         self.n_aug_words: int = self.augmentation_config['n_aug_words']
-        mapping_offset = self.n_base_words - (self.augmentation_config['insertion_index'] - 1)
+        self.mapping_offset = self.n_base_words - self.augmentation_config['insertion_index']
         self.fun_map = {
             (int(i) + self.augmentation_config['n_base_words'] - (self.augmentation_config['insertion_index'] - 1)): sym 
             for i, sym in self.augmentation_config['fun_map'].items()}
         
-        
-        self.boc_id: int = self.augmentation_config['boc_id'] + mapping_offset
-        self.eoc_id: int = self.augmentation_config['eoc_id'] + mapping_offset
-        self.bor_id: int = self.augmentation_config['bor_id'] + mapping_offset
-        self.eor_id: int = self.augmentation_config['eor_id'] + mapping_offset
+        self.n_fun: int = self.augmentation_config['n_fun']
+        self.boc_id: int = self.augmentation_config['boc_id'] + self.mapping_offset 
+        self.eoc_id: int = self.augmentation_config['eoc_id'] + self.mapping_offset 
+        self.bor_id: int = self.augmentation_config['bor_id'] + self.mapping_offset 
+        self.eor_id: int = self.augmentation_config['eor_id'] + self.mapping_offset 
         
         self.bos_id: int = self.sp_model.bos_id()
         self.eos_id: int = self.sp_model.eos_id()
@@ -98,7 +98,7 @@ class AugmentedTokenizer:
         
         # re-map
         numpy_t[mask_base_non_control] -= self.augmentation_config['n_aug_words']
-        numpy_t[mask_new_tokens] += (self.augmentation_config['n_base_words'] - (self.augmentation_config['insertion_index'] - 1))
+        numpy_t[mask_new_tokens] += self.mapping_offset 
         
         return numpy_t.tolist()
     
@@ -118,7 +118,7 @@ class AugmentedTokenizer:
         
         # re-map
         numpy_t[mask_base_non_control] += self.augmentation_config['n_aug_words']
-        numpy_t[mask_new_tokens] -= (self.augmentation_config['n_base_words'] - (self.augmentation_config['insertion_index'] - 1))
+        numpy_t[mask_new_tokens] -= self.mapping_offset 
         
         return numpy_t.tolist()
     

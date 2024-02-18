@@ -8,6 +8,7 @@ from typing import List
 import torch
 from torch import nn
 import torch.nn.functional as F
+import os.path as osp
 import copy
 import random
 import json
@@ -22,6 +23,7 @@ from fairscale.nn.model_parallel.layers import (
 )
 from transformers import AutoTokenizer, AutoModel
 from typing import Dict, Union
+from pathlib2 import Path
 
 
 @dataclass
@@ -208,7 +210,6 @@ class Transformer(nn.Module):
         super().__init__()
         self.params = params
         self.base_vocab_size = params.vocab_size
-        self.aug_vocab_size = params.aug_vocab_size
         self.n_layers = params.n_layers
 
         # initialize augmented embeddings
@@ -224,55 +225,12 @@ class Transformer(nn.Module):
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         # self.vocab_projection = self._initialize_augmented_vocab_projection(params)
         self.output = ColumnParallelLinear(
-            params.dim, params.aug_vocab_size, bias=False, init_method=lambda x: x
+            params.dim, params.vocab_size, bias=False, init_method=lambda x: x
         )
-        self.tool_output = nn.Linear(params.dim, params.aug_vocab_size, bias=False)
-
+        
         self.freqs_cis = precompute_freqs_cis(
             self.params.dim // self.params.n_heads, self.params.max_seq_len * 2
         )
-
-
-    def augment_llm(self,):
-        """
-        Augment base LLM, to be run after the model is initialized & loaded from base
-        """
-        # initialize augmented embeddings
-        aug_weight = torch.Tensor(self.params.aug_vocab_size, self.tok_embeddings.embedding_dim_per_partition)
-        
-        # TODO: change initialzation for semantic initialization
-        _initialize_affine_weight(
-            aug_weight.weight,
-            self.tok_embeddings.num_embeddings,
-            self.tok_embeddings.embedding_dim,
-            self.tok_embeddings.embedding_dim_per_partition,
-            1,
-            lambda x: x,
-            stride=1,
-            return_master_weight=False,
-        )
-        
-        # Expand embedding layer
-        self.tok_embeddings.weight = nn.Parameter(
-            torch.cat((self.tok_embeddings.weight.weight, aug_weight))
-            )
-    
-    
-    def freeze_base_model(self) -> None:
-        # add hook to freeze base embeddings only
-        mask = torch.zeros_like(self.tok_embeddings.weight)
-        mask[self.params.aug_vocab_size:] = 1.
-        self.tok_embeddings.weight.register_hook(lambda grad: grad*mask)
-        
-        # TODO: replicate for final projection
-        # vocab_projection
-        
-        # freeze base model, skipping above layers
-        for name, param in self.named_parameters():
-            if "tok_embeddings" in name or "tool_embed" in name:
-                continue
-            else:
-                param.requires_grad = False
     
     
     # @torch.inference_mode()
@@ -292,44 +250,125 @@ class Transformer(nn.Module):
         h = self.norm(h)
         
         # only compute last logits
-        output_base = self.output(h[:, -1, :]) 
-        output_embed = self.tool_output(h[:, -1, :])
-        
-        output = torch.cat([output_base, output_embed], dim=-1) # expand output vocab dimension
+        output = self.output(h[:, -1, :]) 
         
         return output.float(), h
 
 
 class AugmentedLM(nn.Module):
-    def __init__(self, base_model, tokenizer, func_dict, load_path=None, inference_mode="func_embedding"):
+    def __init__(self, base_model, tokenizer, load_augmentation_path:str = '', inference_mode:str = "func_embedding"):
         super().__init__()
         self.inference_mode = inference_mode
         self.model = base_model
         self.tokenizer = tokenizer
-        self.func_dict = func_dict
-        self.func_list = {v: k for k, v in func_dict.items()}
-        
-        # TODO: Update load method in above model
-        # self.func_embed = nn.Linear(base_model.params.dim, len(func_dict), bias=False).to("cuda")
-        # Load in the base model.
-        if load_path is not None and load_path != "None": # load func_embed weights
-            embedding = torch.load(load_path)
-            if isinstance(embedding, torch.Tensor):
-                embedding = embedding.to("cuda")
-                embedding = {"weight": embedding}
+        self.tool_output = nn.Linear(base_model.params.dim, base_model.params.aug_vocab_size, bias=False)
 
-            # truncate the embedding if necessary
-            if embedding["weight"].shape[0] > len(func_dict):
-                print(f"Truncated the function embedding from {embedding['weight'].shape[0]} to {len(func_dict)}")
-                embedding["weight"] = embedding["weight"][:len(func_dict)]
-
-            self.func_embed.load_state_dict(embedding)
+        self.augment_embeddings()
         
-        # set the basemodel to eval mode and freeze the weights
+        if load_augmentation_path: self.load_augmentation(load_augmentation_path)
+        
         self.model.eval()
-        self.model.freeze_base_model()
+        # self.model.freeze_base_model()
         self.logits_bias = 0
         
+        
+    def augment_embeddings(self, ):
+        """
+        Augment base LLM, to be run after the model is initialized & loaded from base
+        """
+        # initialize augmented embeddings
+        aug_weight = torch.Tensor(self.model.params.aug_vocab_size, self.model.tok_embeddings.embedding_dim_per_partition)
+        
+        # TODO: change initialzation for semantic initialization
+        _initialize_affine_weight(
+            aug_weight,
+            self.model.tok_embeddings.num_embeddings,
+            self.model.tok_embeddings.embedding_dim,
+            self.model.tok_embeddings.embedding_dim_per_partition,
+            1,
+            lambda x: x,
+            stride=1,
+            return_master_weight=False,
+        )
+        
+        # Expand embedding layer
+        self.model.tok_embeddings.weight = nn.Parameter(
+            torch.cat((self.model.tok_embeddings.weight, aug_weight.to(self.model.tok_embeddings.weight.device)), dim=0)
+            )
+        
+    
+    def freeze_base_model(self) -> None:
+        # add hook to freeze base embeddings only
+        mask = torch.zeros_like(self.model.tok_embeddings.weight)
+        mask[self.model.params.aug_vocab_size:] = 1.
+        self.model.tok_embeddings.weight.register_hook(lambda grad: grad*mask)
+        
+        # TODO: replicate for final projection
+        # vocab_projection
+        
+        # freeze base model, skipping above layers
+        for name, param in self.model.named_parameters():
+            if "tok_embeddings" in name:
+                continue
+            else:
+                param.requires_grad = False
+    
+    
+    def save_augmentation(self, save_dir:str, local_rank:int = 0):
+        """
+        Save the augmented mode components.
+        TODO: update to save in different files per rank
+        """
+        print("Saving augmented_model")
+        Path(save_dir).mkdir(parents=True, exist_ok=True)
+        save_path = osp.join(save_dir, f'checkpoint_{local_rank}.pt')
+        embedding_state_dict = self.model.tok_embeddings.state_dict()
+        output_state_dict = self.tool_output.state_dict()
+        
+        # Only store augmentation embeddings
+        embedding_state_dict['weight'] = embedding_state_dict['weight'][-self.model.params.aug_vocab_size:]
+        augmented_state_dict = {
+            "tool_embeddings": embedding_state_dict,
+            "tool_output": output_state_dict
+        }
+        # only store tool output layer and func embedding
+        torch.save(augmented_state_dict, save_path)
+        
+        
+    def load_augmentation(self, load_dir:str, local_rank:int = 0):
+        """
+        Save the augmented embeddings
+        TODO: update to load in different files per rank
+        """
+        load_path = osp.join(load_dir, f'checkpoint_{local_rank}.pt')
+        augmentation_state_dict = torch.load(load_path)
+        assert isinstance(augmentation_state_dict, dict), f"expected a state dictionary, found {type(augmentation_state_dict)}"
+        tool_embeddings_sd = augmentation_state_dict['tool_embeddings']
+        tool_output_sd= augmentation_state_dict['tool_output']
+        # load augmentation compenents
+        
+        base_vocab_weights = self.model.tok_embeddings.weight[:-self.model.params.aug_vocab_size]
+        # print(f"Embedding weights rank {local_rank}: ", tool_embeddings_sd['weight'])
+        self.model.tok_embeddings.weight = nn.Parameter(
+            torch.cat((base_vocab_weights, tool_embeddings_sd['weight'].to(base_vocab_weights.device)), dim=0)
+            )
+        
+        self.tool_output.load_state_dict(tool_output_sd)
+        
+        
+    def _augment_output(self, h:torch.Tensor, only_last:bool=True):
+        if only_last == True:
+            output_base = self.model.output(h[:, -1, :]) 
+            output_tools = self.tool_output(h[:, -1, :])
+        
+        else:
+            output_base = self.model.output(h) 
+            output_tools = self.tool_output(h)
+        
+        output = torch.cat([output_base, output_tools], dim=-1) # expand output vocab dimension
+        return output
+        
+    
     def get_loss(
         self,
         raw_inputs:List[Dict[str, Union[str, int]]],
@@ -340,25 +379,23 @@ class AugmentedLM(nn.Module):
         
         raw_input_ids = torch.tensor(self.tokenizer.encode(raw_inputs["text"], bos=True, eos=True))[:]
         labels = raw_input_ids.clone()
-        for bor_idx, eor_idx in zip(raw_inputs["start_token_idx"], raw_inputs["end_token_idx"]):
+        for bor_idx, eor_idx in zip(raw_inputs["bor_idxs"], raw_inputs["eor_idxs"]):
             labels[bor_idx+1: eor_idx] = -100 # mask out API results tokens
         
         inputs = raw_input_ids[:-1].expand(1, -1).to("cuda")
         labels = labels[1:].expand(1, -1).to("cuda")
         
-        _, h = self.model(inputs, 0)
-        base_logits = self.model.output(h) 
-        tool_logits = self.model.tool_embed(h)
-        full_logits = torch.cat([base_logits, tool_logits], dim=-1)
+        full_logits = self._augment_output(self.model(inputs, 0)[1], only_last=False)
         
+        # print(full_logits.shape, labels.max(), labels.min())
         loss = F.cross_entropy(full_logits.view(-1, full_logits.shape[-1]), labels.view(-1), ignore_index=-100)
         
         pred = torch.argmax(full_logits, dim=-1) # (bsz, seqlen)
         pred = pred.view(-1)
         labels = labels.view(-1)
-
-        label_funcs = [labels == id for id in raw_inputs["func_ids"]]
-        pred_funcs = [pred == id for id in raw_inputs["func_ids"]]
+                
+        label_funcs = [labels == id for id in self.tokenizer.fun_map.keys()]
+        pred_funcs = [pred == id for id in self.tokenizer.fun_map.keys()]
         label_funcs = torch.stack(label_funcs, dim=0)
         pred_funcs = torch.stack(pred_funcs, dim=0)
         

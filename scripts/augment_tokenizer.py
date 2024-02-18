@@ -5,6 +5,7 @@ from os import path as osp
 from sentencepiece import SentencePieceProcessor
 from sentencepiece import sentencepiece_model_pb2 as model
 
+FUN_CONTROL_TOKENS = ['<BOC>', '<EOC>', '<BOR>', '<EOR>']
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -15,7 +16,7 @@ def get_args():
     return parser.parse_args()
 
 def augment_tokenizer(in_tok_path, 
-                      new_tokens, 
+                      fun_tokens, 
                       out_tok_dir, 
                       insertion_index=3):
 
@@ -32,13 +33,12 @@ def augment_tokenizer(in_tok_path,
     n_base_tokens = len(mp.pieces)
     
     fun_map = {}
-    for i, sym in enumerate(new_tokens, insertion_index):
+    for i, sym in enumerate(FUN_CONTROL_TOKENS + fun_tokens, insertion_index):
         new_sym = mp.SentencePiece()
         new_sym.piece = sym 
         new_sym.score = 0.0 # default score for USER_DEFINED
         new_sym.type = 4 # type value for USER_DEFINED
         mp.pieces.insert(i, new_sym) # position after default control symbols ("<unk>", "<s>", "</s>")
-        fun_map[i] = sym
         if sym == '<BOC>':
             boc_id = i
         elif sym == '<EOC>':
@@ -47,6 +47,8 @@ def augment_tokenizer(in_tok_path,
             bor_id = i
         elif sym == '<EOR>':
             eor_id = i
+        else:
+            fun_map[i] = sym
         print(f'\tadded {new_sym.piece} ...')
 
     print(f'New model pieces: {len(mp.pieces)}')
@@ -59,7 +61,8 @@ def augment_tokenizer(in_tok_path,
     # write augmented config
     config = {
         'insertion_index': insertion_index,
-        'n_aug_words': len(new_tokens),
+        'n_aug_words': len(FUN_CONTROL_TOKENS + fun_tokens),
+        'n_fun': len(fun_tokens),
         'n_base_words': n_base_tokens,
         'fun_map': fun_map,
         'boc_id': boc_id,
@@ -88,7 +91,7 @@ def test_augmented_tokenizer(out_tok_dir):
         
     
 def main(in_tok_path='/home/karypisg/romer333/projects/LLM-tools/models/llama_checkpoints/tokenizer.model',
-         new_tokens=['<BOC>', '<EOC>', '<BOR>', '<EOR>'], 
+         fun_tokens=[], 
          out_tok_dir='/home/karypisg/romer333/projects/LLM-tools/ToolkenGPT/augmented_tokenizer/',
          insertion_index=3
          ):
@@ -96,7 +99,7 @@ def main(in_tok_path='/home/karypisg/romer333/projects/LLM-tools/models/llama_ch
     Path(out_tok_dir).mkdir(parents=True, exist_ok=True)
         
     # augment tokenizer
-    augment_tokenizer(in_tok_path, new_tokens, out_tok_dir, insertion_index)
+    augment_tokenizer(in_tok_path, fun_tokens, out_tok_dir, insertion_index)
     
     test_augmented_tokenizer(out_tok_dir)
 

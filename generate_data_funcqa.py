@@ -1,6 +1,8 @@
 import re
 import json
 import torch
+import os.path as osp
+from pathlib2 import Path
 from llama_augmented.tokenizer import AugmentedTokenizer
 
 
@@ -33,20 +35,25 @@ def main(data):
             'text': text, 
             'tar_eq': record['tar_eq'], 
             'tar_number': record['tar_number'],
-            'fun_ids': [tokens[idx + 1] for idx in boc_ids],
+            'api_ids': [tokens[idx + 1] for idx in boc_ids],
             # 'eoc_ids': eoc_ids,
-            'bor_ids': bor_ids,
-            'eor_ids': eor_ids
+            'bor_idxs': bor_ids,
+            'eor_idxs': eor_ids
             })
         # break
     return out_data
     
 
 if __name__ == '__main__':
-    with open('../data/funcqa/train.json', 'r') as fp:
+    in_path = '../data/funcqa/train.json'
+    out_dir = '../augmented_data/funcqa/'
+    out_fn = 'train.json'
+    
+    with open(in_path, 'r') as fp:
         data = json.load(fp)
 
     out_data = main(data)
 
-    with open('../augmentation_data/funcqa/train.json', 'w') as fp:
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    with open(osp.join(out_dir, out_fn), 'w') as fp:
         json.dump(out_data, fp)

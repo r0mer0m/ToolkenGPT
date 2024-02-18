@@ -13,9 +13,9 @@ import numpy as np
 from tqdm import tqdm
 from typing import Tuple
 from pathlib import Path
-
 from fairscale.nn.model_parallel.initialize import initialize_model_parallel
-from llama_augmented import ModelArgs, Transformer, AugmentedTokenizer, FunctionLM
+from llama_augmented import ModelArgs, Transformer, AugmentedTokenizer, AugmentedLM
+from torch.distributed.elastic.multiprocessing.errors import record
 
 def setup_model_parallel() -> Tuple[int, int]:
     local_rank = int(os.environ.get("LOCAL_RANK", -1))
@@ -27,7 +27,7 @@ def setup_model_parallel() -> Tuple[int, int]:
     return local_rank, world_size
 
 
-def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, func_dict: dict) -> FunctionLM:
+def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, func_dict: dict) -> AugmentedLM:
     start_time = time.time()
     checkpoints = sorted(Path(ckpt_dir).glob("*.pth"))
     assert (
@@ -44,15 +44,18 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, f
     tokenizer = AugmentedTokenizer(tokenizer_dir=tokenizer_path)
     model_args.vocab_size = tokenizer.n_base_words
     model_args.aug_vocab_size = tokenizer.n_aug_words
-    torch.set_default_tensor_type(torch.cuda.HalfTensor)
-    model = Transformer(model_args).cuda().half()
+    # torch.set_default_tensor_type(torch.cuda.HalfTensor)
+    # model = Transformer(model_args).cuda().half()
+    # torch.set_default_tensor_type(torch.FloatTensor)
     torch.set_default_tensor_type(torch.FloatTensor)
+    model = Transformer(model_args).cuda()
     model.load_state_dict(checkpoint, strict=False)
-    funcmodel = FunctionLM(model, tokenizer, func_dict = func_dict)
+    model.augment_llm()
+    funcmodel = AugmentedLM(model, tokenizer, func_dict = func_dict)
     print(f"Loaded in {time.time() - start_time:.2f} seconds")
     return funcmodel
 
-
+@record
 def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float = 1e-3, num_epochs: int = 20, dataset: str = "gsm8k-xl", log_prefix="", only_functoken=False, log_each=False):
 
     torch.manual_seed(1)
@@ -75,6 +78,7 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
         # wandb.init(project="opt", name=save_name)
 
     funcmodel = load(ckpt_dir, tokenizer_path, local_rank, world_size, func_dict=func_dict)
+    n_fun = funcmodel.tokenizer.n_fun
     
     if input_file.endswith(".json"):
         with open(input_file, "r") as f:
@@ -101,10 +105,6 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
 
     # only update tokens with gradients required
     optimizer = torch.optim.Adam([p for p in funcmodel.parameters() if p.requires_grad], lr=lr)
-
-    # func_dict
-    func_dict = funcmodel.func_dict
-    func_list = list(func_dict.keys())
     
     from collections import defaultdict
     for epoch in range(num_epochs):
@@ -112,6 +112,10 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
         
         random.shuffle(trainset)
         for case_idx, prompt in tqdm(enumerate(trainset)):
+            
+            # if len(prompt['api_ids']) == 0:
+            #     continue
+            
             funcmodel.train()
             
             optimizer.zero_grad()
@@ -123,21 +127,22 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
                 results[i].append(r)
             
             if (case_idx + 1) % 20 == 0:
-                for i in range(len(func_list)+1):
-                    if i != len(func_list):
+                
+                for i in range(n_fun + 1):
+                    if i != n_fun:
                         tp, pred, true = sum([r[i] for r in results["tp"]]), sum([r[i] for r in results["pred"]]), sum([r[i] for r in results["true"]])
                     else:
                         tp, pred, true = sum([r.sum() for r in results["tp"]]), sum([r.sum() for r in results["pred"]]), sum([r.sum() for r in results["true"]])
                     # print(f"tp: {tp}, pred: {pred}, true: {true}")
                     
                     if local_rank == 0:
-                        if i != len(func_list) and log_each:
+                        if i != n_fun and log_each:
                             wandb.log({
                                 f"precision-{i}": tp / (pred + 1e-8),
                                 f"recall-{i}": tp / (true + 1e-8),
                                 f"f1-{i}": 2 * tp / (pred + true + 1e-8)
                             })
-                        elif i == len(func_list):
+                        elif i == n_fun:
                             wandb.log({
                                 f"precision": tp / (pred + 1e-8),
                                 f"recall": tp / (true + 1e-8),
@@ -154,14 +159,18 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
         results = defaultdict(list)
         for case_idx, prompt in tqdm(enumerate(testset)):
             funcmodel.eval()
+            
+            # if len(prompt['api_ids']) == 0:
+            #     continue
+            
             with torch.no_grad():
                 loss, result = funcmodel.get_loss([prompt])
             
             for i, r in result.items():
                 results[i].append(r)
             
-        for i in range(len(func_list) + 1):
-            if i != len(func_list):
+        for i in range(n_fun + 1):
+            if i != n_fun:
                 tp, pred, true = sum([r[i] for r in results["tp"]]), sum([r[i] for r in results["pred"]]), sum([r[i] for r in results["true"]])
             else:
                 # 4 is for all functions
@@ -169,13 +178,13 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
             # print(f"tp: {tp}, pred: {pred}, true: {true}")
             
             if local_rank == 0:
-                if i != len(func_list) and log_each:
+                if i != n_fun and log_each:
                     wandb.log({
                         f"test-precision-{i}": tp / (pred + 1e-8),
                         f"test-recall-{i}": tp / (true + 1e-8),
                         f"test-f1-{i}": 2 * tp / (pred + true + 1e-8)
                     })
-                elif i == len(func_list):
+                elif i == n_fun:
                     wandb.log({
                         f"test-precision": tp / (pred + 1e-8),
                         f"test-recall": tp / (true + 1e-8),
@@ -183,6 +192,7 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
                     })
 
         # save the parameters of func_embed every epoch
+        print("Saving augmented_model")
         save_dir = f"checkpoints/{log_prefix}{dataset}/"
         os.makedirs(save_dir, exist_ok=True)
         torch.save(funcmodel.func_embed.state_dict(), f"{save_dir}/epoch_{epoch}.pth")
