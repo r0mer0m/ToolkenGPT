@@ -53,6 +53,17 @@ class AugmentedTokenizer:
         # BOS / EOS token IDs
         self.n_base_words: int = self.augmentation_config['n_base_words']
         self.n_aug_words: int = self.augmentation_config['n_aug_words']
+        mapping_offset = self.n_base_words - (self.augmentation_config['insertion_index'] - 1)
+        self.fun_map = {
+            (int(i) + self.augmentation_config['n_base_words'] - (self.augmentation_config['insertion_index'] - 1)): sym 
+            for i, sym in self.augmentation_config['fun_map'].items()}
+        
+        
+        self.boc_id: int = self.augmentation_config['boc_id'] + mapping_offset
+        self.eoc_id: int = self.augmentation_config['eoc_id'] + mapping_offset
+        self.bor_id: int = self.augmentation_config['bor_id'] + mapping_offset
+        self.eor_id: int = self.augmentation_config['eor_id'] + mapping_offset
+        
         self.bos_id: int = self.sp_model.bos_id()
         self.eos_id: int = self.sp_model.eos_id()
         self.pad_id: int = self.sp_model.pad_id()

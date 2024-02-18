@@ -29,17 +29,27 @@ def augment_tokenizer(in_tok_path,
 
     print("Inserting additional tokens....")
     print(f'Original model pieces: {len(mp.pieces)}')
-
+    n_base_tokens = len(mp.pieces)
+    
+    fun_map = {}
     for i, sym in enumerate(new_tokens, insertion_index):
         new_sym = mp.SentencePiece()
         new_sym.piece = sym 
         new_sym.score = 0.0 # default score for USER_DEFINED
         new_sym.type = 4 # type value for USER_DEFINED
         mp.pieces.insert(i, new_sym) # position after default control symbols ("<unk>", "<s>", "</s>")
+        fun_map[i] = sym
+        if sym == '<BOC>':
+            boc_id = i
+        elif sym == '<EOC>':
+            eoc_id = i
+        elif sym == '<BOR>':
+            bor_id = i
+        elif sym == '<EOR>':
+            eor_id = i
         print(f'\tadded {new_sym.piece} ...')
 
     print(f'New model pieces: {len(mp.pieces)}')
-    
     print(f"Writting augmented tokenizer to {out_tok_dir}....")
     
     # write tokenizer model 
@@ -50,8 +60,14 @@ def augment_tokenizer(in_tok_path,
     config = {
         'insertion_index': insertion_index,
         'n_aug_words': len(new_tokens),
-        'n_base_words': len(mp.pieces) - len(new_tokens)
+        'n_base_words': n_base_tokens,
+        'fun_map': fun_map,
+        'boc_id': boc_id,
+        'eoc_id': eoc_id,
+        'bor_id': bor_id,
+        'eor_id': eor_id
     }
+    
     with open(out_config_path, 'w') as fp:
         json.dump(config, fp)
         
