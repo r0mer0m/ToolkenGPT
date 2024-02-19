@@ -249,10 +249,11 @@ class Transformer(nn.Module):
             h = layer(h, start_pos, freqs_cis, mask)
         h = self.norm(h)
         
+        # move model output forward outsie base model
         # only compute last logits
-        output = self.output(h[:, -1, :]) 
+        # output = self.output(h[:, -1, :]) 
         
-        return output.float(), h
+        return h #output.float(), h
 
 
 class AugmentedLM(nn.Module):
@@ -267,7 +268,9 @@ class AugmentedLM(nn.Module):
         
         if load_augmentation_path: self.load_augmentation(load_augmentation_path)
         
-        self.model.eval()
+        # self.prev_weigths = self.tool_output.weight.clone()
+        
+        # self.model.eval()
         # self.model.freeze_base_model()
         self.logits_bias = 0
         
@@ -300,7 +303,7 @@ class AugmentedLM(nn.Module):
     def freeze_base_model(self) -> None:
         # add hook to freeze base embeddings only
         mask = torch.zeros_like(self.model.tok_embeddings.weight)
-        mask[self.model.params.aug_vocab_size:] = 1.
+        mask[-self.model.params.aug_vocab_size:] = 1.
         self.model.tok_embeddings.weight.register_hook(lambda grad: grad*mask)
         
         # TODO: replicate for final projection
@@ -385,7 +388,7 @@ class AugmentedLM(nn.Module):
         inputs = raw_input_ids[:-1].expand(1, -1).to("cuda")
         labels = labels[1:].expand(1, -1).to("cuda")
         
-        full_logits = self._augment_output(self.model(inputs, 0)[1], only_last=False)
+        full_logits = self._augment_output(self.model(inputs, 0), only_last=False)
         
         # print(full_logits.shape, labels.max(), labels.min())
         loss = F.cross_entropy(full_logits.view(-1, full_logits.shape[-1]), labels.view(-1), ignore_index=-100)
@@ -394,8 +397,8 @@ class AugmentedLM(nn.Module):
         pred = pred.view(-1)
         labels = labels.view(-1)
                 
-        label_funcs = [labels == id for id in self.tokenizer.fun_map.keys()]
-        pred_funcs = [pred == id for id in self.tokenizer.fun_map.keys()]
+        label_funcs = [labels == int(id) for id in self.tokenizer.fun_map.keys()]
+        pred_funcs = [pred == int(id) for id in self.tokenizer.fun_map.keys()]
         label_funcs = torch.stack(label_funcs, dim=0)
         pred_funcs = torch.stack(pred_funcs, dim=0)
         

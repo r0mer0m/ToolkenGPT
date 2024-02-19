@@ -34,6 +34,7 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, f
         world_size == len(checkpoints)
     ), f"Loading a checkpoint for MP={len(checkpoints)} but world size is {world_size}"
     ckpt_path = checkpoints[local_rank]
+    print(ckpt_path)
     print("Loading")
     checkpoint = torch.load(ckpt_path, map_location="cpu")
     
@@ -47,12 +48,14 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, f
     # torch.set_default_tensor_type(torch.cuda.HalfTensor)
     # model = Transformer(model_args).cuda().half()
     # torch.set_default_tensor_type(torch.FloatTensor)
-    torch.set_default_tensor_type(torch.FloatTensor)
-    model = Transformer(model_args).cuda()
+    torch.set_default_tensor_type(torch.HalfTensor)
+    model = Transformer(model_args).half()
     model.load_state_dict(checkpoint, strict=False)
-    model.augment_llm()
-    funcmodel = AugmentedLM(model, tokenizer, func_dict = func_dict)
+    torch.set_default_tensor_type(torch.FloatTensor)
+    funcmodel = AugmentedLM(model, tokenizer).cuda().float()
     print(f"Loaded in {time.time() - start_time:.2f} seconds")
+    funcmodel.freeze_base_model()
+    funcmodel.train()
     return funcmodel
 
 @record
@@ -100,28 +103,35 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
     elif dataset == "kamel":
         test_len = 1000
     
+    print("Total data: ")
     testset = prompts[-test_len:]
     trainset = prompts[:-test_len]
+    
+    print(f"Trainset: {len(trainset)}, Testset: {len(testset)}")
 
     # only update tokens with gradients required
-    optimizer = torch.optim.Adam([p for p in funcmodel.parameters() if p.requires_grad], lr=lr)
+    # optimizer = torch.optim.Adam([p for p in funcmodel.parameters() if p.requires_grad], lr=lr)
+    optimizer = torch.optim.Adam(funcmodel.parameters(), lr=lr)
     
     from collections import defaultdict
+    funcmodel.train()
     for epoch in range(num_epochs):
         results = defaultdict(list)
         
         random.shuffle(trainset)
-        for case_idx, prompt in tqdm(enumerate(trainset)):
+        for case_idx, prompt in tqdm(enumerate(trainset), desc=f"Epoch {epoch} - Training"):
             
             # if len(prompt['api_ids']) == 0:
             #     continue
             
-            funcmodel.train()
-            
             optimizer.zero_grad()
             loss, result = funcmodel.get_loss([prompt], only_functoken=only_functoken)
             loss.backward()
+            print("------------------ backwards done ------------------")
             optimizer.step()
+            # tool_ouput_diff = torch.abs(funcmodel.prev_weigths, funcmodel.tool_output.weigth).sum()
+            # print(f"Case idx {case_idx} tool_ouput_diff: {tool_ouput_diff}")
+            # funcmodel.prev_weights = funcmodel.tool_output.weight.clone()
 
             for i, r in result.items():
                 results[i].append(r)
@@ -157,7 +167,7 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
         
         # test on validation set
         results = defaultdict(list)
-        for case_idx, prompt in tqdm(enumerate(testset)):
+        for case_idx, prompt in tqdm(enumerate(testset), desc=f"Epoch {epoch} - Validation"):
             funcmodel.eval()
             
             # if len(prompt['api_ids']) == 0:
@@ -193,9 +203,10 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
 
         # save the parameters of func_embed every epoch
         print("Saving augmented_model")
-        save_dir = f"checkpoints/{log_prefix}{dataset}/"
-        os.makedirs(save_dir, exist_ok=True)
-        torch.save(funcmodel.func_embed.state_dict(), f"{save_dir}/epoch_{epoch}.pth")
+        save_dir = f"checkpoints/{log_prefix}{dataset}/epoch_{epoch}"
+        # os.makedirs(save_dir, exist_ok=True)
+        funcmodel.save_augmentation(save_dir, local_rank=local_rank)
+        # torch.save(funcmodel.func_embed.state_dict(), f"{save_dir}/epoch_{epoch}.pth")
         results = defaultdict(list)
 
 if __name__ == "__main__":

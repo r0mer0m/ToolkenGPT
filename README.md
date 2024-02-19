@@ -127,5 +127,5 @@ CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run --nproc_per_node 2 --ma
 For debugging use `CUDA_LAUNCH_BLOCKING=1`.
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run --nproc_per_node 2 --master_port 1200 train_augmented_llama.py --ckpt_dir $LLAMA_CKPTS/llama-2-13b-chat --tokenizer_path ./augmented_tokenizer --input_file ../augmented_data/funcqa/train.json --lr 1e-4 --num_epochs 10
+CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run --nproc_per_node 2 --master_port 1200 train_augmented_llama.py --ckpt_dir $LLAMA_CKPTS/llama-2-13b-chat --tokenizer_path ./augmented_tokenizer --input_file ../augmented_data/funcqa/train.json --lr 1e-4 --num_epochs 10 --dataset funcqa
 ```
