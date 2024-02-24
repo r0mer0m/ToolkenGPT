@@ -252,51 +252,59 @@ class Transformer(nn.Module):
         # move model output forward outsie base model
         # only compute last logits
         # output = self.output(h[:, -1, :]) 
+        output = self.output(h) 
         
-        return h #output.float(), h
+        return output.float(), h
 
 
 class AugmentedLM(nn.Module):
-    def __init__(self, base_model, tokenizer, load_augmentation_path:str = '', inference_mode:str = "func_embedding"):
+    def __init__(self, base_model, tokenizer, config, load_augmentation_path:str = '', inference_mode:str = "func_embedding"):
         super().__init__()
         self.inference_mode = inference_mode
         self.model = base_model
         self.tokenizer = tokenizer
-        self.tool_output = nn.Linear(base_model.params.dim, base_model.params.aug_vocab_size, bias=False)
+        self.config = config
+        if getattr(config, 'augment', False):
+            self.tool_output = nn.Linear(config.hidden_size, config.aug_vocab_size, bias=False)
 
-        self.augment_embeddings()
+            # self.augment_embeddings(config)
         
-        if load_augmentation_path: self.load_augmentation(load_augmentation_path)
+            if load_augmentation_path: self.load_augmentation(load_augmentation_path)
         
         # self.prev_weigths = self.tool_output.weight.clone()
         
         # self.model.eval()
         # self.model.freeze_base_model()
+        
+        # might need to use post-init
+        
         self.logits_bias = 0
         
         
-    def augment_embeddings(self, ):
+    def augment_embeddings(self, config):
         """
         Augment base LLM, to be run after the model is initialized & loaded from base
         """
         # initialize augmented embeddings
-        aug_weight = torch.Tensor(self.model.params.aug_vocab_size, self.model.tok_embeddings.embedding_dim_per_partition)
+        aug_weight = torch.Tensor(config.aug_vocab_size, self.model.tok_embeddings.embedding_dim_per_partition)
         
         # TODO: change initialzation for semantic initialization
-        _initialize_affine_weight(
-            aug_weight,
-            self.model.tok_embeddings.num_embeddings,
-            self.model.tok_embeddings.embedding_dim,
-            self.model.tok_embeddings.embedding_dim_per_partition,
-            1,
-            lambda x: x,
-            stride=1,
-            return_master_weight=False,
-        )
+        # _initialize_affine_weight(
+        #     aug_weight,
+        #     self.model.tok_embeddings.num_embeddings,
+        #     self.model.tok_embeddings.embedding_dim,
+        #     self.model.tok_embeddings.embedding_dim_per_partition,
+        #     1,
+        #     lambda x: x,
+        #     stride=1,
+        #     return_master_weight=False,
+        # )
+        stdv = 1. / math.sqrt(aug_weight.size(1)) # linear layer intialization
+        aug_weight.uniform_(-stdv, stdv)
         
         # Expand embedding layer
         self.model.tok_embeddings.weight = nn.Parameter(
-            torch.cat((self.model.tok_embeddings.weight, aug_weight.to(self.model.tok_embeddings.weight.device)), dim=0)
+            torch.cat((self.model.tok_embeddings.weight.data, aug_weight.to(self.model.tok_embeddings.weight.device)), dim=0)
             )
         
     
@@ -306,15 +314,13 @@ class AugmentedLM(nn.Module):
         mask[-self.model.params.aug_vocab_size:] = 1.
         self.model.tok_embeddings.weight.register_hook(lambda grad: grad*mask)
         
-        # TODO: replicate for final projection
-        # vocab_projection
-        
         # freeze base model, skipping above layers
         for name, param in self.model.named_parameters():
             if "tok_embeddings" in name:
                 continue
             else:
                 param.requires_grad = False
+            # param.requires_grad = False
     
     
     def save_augmentation(self, save_dir:str, local_rank:int = 0):
@@ -357,20 +363,63 @@ class AugmentedLM(nn.Module):
             )
         
         self.tool_output.load_state_dict(tool_output_sd)
+    
+    
+    def forward(self, inputs:torch.Tensor):#, start_pos:int):
+        # if 
+        # base_logits, h = self.model(inputs)#, start_pos)
+        base_outputs = self.model(inputs, output_hidden_states=True)
+        # print("Output attributes: ", dir(base_outputs))
+        print("Hidden States: ", base_outputs.hidden_states[-1].shape)
+        print("Logits: ", base_outputs.logits)
+        # tool_logits = self.tool_output(h)
+        # full_logits = torch.cat([base_logits, tool_logits], dim=-1)
+        return base_outputs.logits
         
+    
+    def get_standard_loss(
+        self,
+        raw_inputs:List[Dict[str, Union[str, int]]]
+    ):
+        assert len(raw_inputs) == 1
+        raw_inputs = raw_inputs[0]
         
-    def _augment_output(self, h:torch.Tensor, only_last:bool=True):
-        if only_last == True:
-            output_base = self.model.output(h[:, -1, :]) 
-            output_tools = self.tool_output(h[:, -1, :])
+        raw_input_ids = torch.tensor(self.tokenizer.encode(raw_inputs["text"], bos=True, eos=True))[:]
+        labels = raw_input_ids.clone()
         
-        else:
-            output_base = self.model.output(h) 
-            output_tools = self.tool_output(h)
+        inputs = raw_input_ids[:-1].expand(1, -1).to("cuda")
+        labels = labels[1:].expand(1, -1).to("cuda")
         
-        output = torch.cat([output_base, output_tools], dim=-1) # expand output vocab dimension
-        return output
+        full_logits = self(inputs)#, 0)
         
+        # print(full_logits.shape, labels.max(), labels.min())
+        loss = F.cross_entropy(full_logits.view(-1, full_logits.shape[-1]), labels.view(-1), ignore_index=-100)
+        print(loss)
+        loss = loss.mean()
+        print(loss)
+        # Compute in-batch metrics
+        # pred = torch.argmax(full_logits.detach(), dim=-1) # (bsz, seqlen)
+        # pred = pred.view(-1)
+        # labels = labels.view(-1)
+                
+        # label_funcs = [labels == int(id) for id in self.tokenizer.fun_map.keys()]
+        # pred_funcs = [pred == int(id) for id in self.tokenizer.fun_map.keys()]
+        # label_funcs = torch.stack(label_funcs, dim=0)
+        # pred_funcs = torch.stack(pred_funcs, dim=0)
+        
+        # tp = torch.sum(label_funcs * pred_funcs, dim=-1).detach().cpu().numpy()
+        # pred_funcs = torch.sum(pred_funcs, dim=-1).detach().cpu().numpy()
+        # true = torch.sum(label_funcs, dim=-1).detach().cpu().numpy()
+        # results = {
+        #     "tp": tp,
+        #     "pred": pred_funcs,
+        #     "true": true
+        # }
+        results = {}
+
+        return loss, results
+    
+    
     
     def get_loss(
         self,
@@ -388,28 +437,30 @@ class AugmentedLM(nn.Module):
         inputs = raw_input_ids[:-1].expand(1, -1).to("cuda")
         labels = labels[1:].expand(1, -1).to("cuda")
         
-        full_logits = self._augment_output(self.model(inputs, 0), only_last=False)
+        full_logits = self(inputs, 0)
         
         # print(full_logits.shape, labels.max(), labels.min())
         loss = F.cross_entropy(full_logits.view(-1, full_logits.shape[-1]), labels.view(-1), ignore_index=-100)
         
-        pred = torch.argmax(full_logits, dim=-1) # (bsz, seqlen)
-        pred = pred.view(-1)
-        labels = labels.view(-1)
+        # Compute in-batch metrics
+        # pred = torch.argmax(full_logits.detach(), dim=-1) # (bsz, seqlen)
+        # pred = pred.view(-1)
+        # labels = labels.view(-1)
                 
-        label_funcs = [labels == int(id) for id in self.tokenizer.fun_map.keys()]
-        pred_funcs = [pred == int(id) for id in self.tokenizer.fun_map.keys()]
-        label_funcs = torch.stack(label_funcs, dim=0)
-        pred_funcs = torch.stack(pred_funcs, dim=0)
+        # label_funcs = [labels == int(id) for id in self.tokenizer.fun_map.keys()]
+        # pred_funcs = [pred == int(id) for id in self.tokenizer.fun_map.keys()]
+        # label_funcs = torch.stack(label_funcs, dim=0)
+        # pred_funcs = torch.stack(pred_funcs, dim=0)
         
-        tp = torch.sum(label_funcs * pred_funcs, dim=-1).detach().cpu().numpy()
-        pred_funcs = torch.sum(pred_funcs, dim=-1).detach().cpu().numpy()
-        true = torch.sum(label_funcs, dim=-1).detach().cpu().numpy()
-        results = {
-            "tp": tp,
-            "pred": pred_funcs,
-            "true": true
-        }
+        # tp = torch.sum(label_funcs * pred_funcs, dim=-1).detach().cpu().numpy()
+        # pred_funcs = torch.sum(pred_funcs, dim=-1).detach().cpu().numpy()
+        # true = torch.sum(label_funcs, dim=-1).detach().cpu().numpy()
+        # results = {
+        #     "tp": tp,
+        #     "pred": pred_funcs,
+        #     "true": true
+        # }
+        results = {}
 
         return loss, results
     
