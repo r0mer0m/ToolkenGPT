@@ -49,7 +49,7 @@ class PLModel(LightningModule):
         self.config = config
         self.ignore_index = -100
         self.loss_fun = nn.CrossEntropyLoss(ignore_index=self.ignore_index)
-        self.last = None
+        # self.last = None
         
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -59,31 +59,27 @@ class PLModel(LightningModule):
             assert len(batch) == 1
             batch = batch[0]
         
-        raw_input_ids = torch.tensor(self.tokenizer.encode(batch["text"], bos=True, eos=True))[:]
-        labels = raw_input_ids.clone()
+        input_ids = batch['input_ids'].to("cuda")
+        target_ids = batch['target_ids'].to("cuda")
         
-        inputs = raw_input_ids[:-1].expand(1, -1).to("cuda")
-        labels = labels[1:].expand(1, -1).to("cuda")
+        full_logits = self.model(input_ids).logits
         
-        full_logits = self.model(inputs).logits
-        
-        loss = self.loss_fun(full_logits.view(-1, full_logits.shape[-1]), labels.view(-1))
+        loss = self.loss_fun(full_logits.view(-1, full_logits.shape[-1]), target_ids.view(-1))
         
         return loss
     
-    def on_before_backward(self, _):
-        test = [{'name':n, 'weight':p} for n, p in self.model.named_parameters() if p.requires_grad]
-        print(test)
-        if self.last:
-            print((self.last - test['weight']).sum())
-        self.last = test['weight']
-    
+    # def on_before_backward(self, _):
+    #     test = [{'name':n, 'weight':p} for n, p in self.model.named_parameters() if p.requires_grad]
+    #     print(test)
+    #     if self.last:
+    #         print((self.last - test['weight']).sum())
+    #     self.last = test['weight']
     
     def on_epoch_begin(self,):
         self.model.augment()
     
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.model.parameters(), lr=self.config.lr)
+        return torch.optim.AdamW([p for p in self.model.parameters() if p.requires_grad], lr=self.config.lr)
         # return DeepSpeedCPUAdam(self.model.parameters(), lr=self.config.lr)
 
 

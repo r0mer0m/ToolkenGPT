@@ -1,22 +1,46 @@
 import json
+import torch
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.distributed import DistributedSampler
 
+TEST_LEN = {
+    "gsm8k-xl": 1000,
+    "funcqa": 39,
+    "vh": 47,
+    "kamel": 1000
+}
 
-class BaseDataset(Dataset):
+class AugLMDataset(Dataset):
     
     def __init__(self, records, tokenizer):
         self.records = records
         self.tokenizer = tokenizer
+        self.ignore_index = -100
         
     def __len__(self,):
         return len(self.records)
     
     def __getitem__(self, i):
         text = self.records[i]['text']
-        input_ids = self.tokenizer.encode(text)
-        return input_ids
+        
+        input_ids = torch.tensor(self.tokenizer.encode(text, bos=True, eos=True))[:]
+        target_ids = input_ids.clone()
+        
+        # ignore indices before first API call. 
+        idxs = (target_ids == self.tokenizer.boc_id).nonzero()
+        idx = idxs[0] if len(idxs.shape) == 1 else idxs[0][0]
+        target_ids[:idx] = self.ignore_index
+        
+        input_ids = input_ids[:-1].expand(1, -1).to("cuda")
+        target_ids = target_ids[1:].expand(1, -1).to("cuda")
+        
+        record = {
+            "input_ids": input_ids,
+            "target_ids": target_ids
+        }
+        
+        return record
         
 
 def collate_fn(batch):
@@ -24,17 +48,13 @@ def collate_fn(batch):
 
 
 class PLDataModule(LightningDataModule):
-    def __init__(self, input_file:str, dataset_name:str, rank, world_size, batch_size=1, num_workers=2, pin_memory=True, shuffle=True):
+    def __init__(self, tokenizer, data_args):
         super().__init__()
         
-        self.input_file = input_file
-        self.dataset_name = dataset_name
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-        self.pin_memory = pin_memory
-        self.shuffle = shuffle
-        self.rank = rank
-        self.world_size = world_size
+        self.tokenizer = tokenizer
+        self.args = data_args
+        if not hasattr(data_args, 'test_len'):
+            self.args.test_len = TEST_LEN[self.args.dataset_name]
     
     def setup(self, stage=None):
         if self.input_file.endswith(".json"):
@@ -46,20 +66,12 @@ class PLDataModule(LightningDataModule):
                 prompts = f.readlines()
             prompts = [prompt.strip().replace("\\n", "\n") for prompt in prompts if len(prompt) > 1]
 
-        if self.dataset_name == "gsm8k-xl":
-            # the last 1000 prompts are the testset
-            test_len = 1000
-        elif self.dataset_name == "funcqa":
-            # the last 39 prompts are the testset
-            test_len = 39
-        elif self.dataset_name == "vh":
-            test_len = 47
-        elif self.dataset_name == "kamel":
-            test_len = 1000
+        train_data = prompts[:-self.args.test_len]
+        test_data = prompts[-self.args.test_len:]
+        if self.args.rank == 0: print(f"Total data:\n\tTraining: {len(train_data)}\n\tTesting: {len(test_data)}")
         
-        print("Total data: ")
-        self.train_dataset = prompts[:-test_len]
-        self.test_dataset = prompts[-test_len:]
+        self.train_dataset = AugLMDataset(train_data, self.tokenizer)
+        self.test_dataset = AugLMDataset(test_data, self.tokenizer)
             
     def train_dataloader(self):
         sampler = DistributedSampler(self.train_dataset, rank=self.rank, num_replicas=self.world_size, shuffle=True)

@@ -246,6 +246,9 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
     # func_dict = json.load(open(func_dict_path, "r"))
     
     training_config = SimpleNamespace(lr=lr, num_epochs=num_epochs, log_each=log_each)
+    data_config = SimpleNamespace(input_file=input_file, dataset_name=dataset, 
+                                  rank=rank, world_size=world_size, 
+                                  batch_size=1, num_workers=2, pin_memory=True)
     
     # # local_rank, world_size = setup_model_parallel()
     # if local_rank > 0:
@@ -310,8 +313,8 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
     #     'zero_force_ds_cpu_optimizer': False,
     # }
         
-    data_module = PLDataModule(input_file=input_file, dataset_name=dataset, rank=rank, world_size=world_size)#train_dataloader, test_dataloader = process_data(input_file, dataset)
     tokenizer, model = load(ckpt_dir, tokenizer_path, local_rank=0, world_size=2, func_dict=None)
+    data_module = PLDataModule(tokenizer=tokenizer, data_args=data_config)#input_file=input_file, dataset_name=dataset, rank=rank, world_size=world_size)#train_dataloader, test_dataloader = process_data(input_file, dataset)
 
     model = PLModel(model=model, tokenizer=tokenizer, config=training_config)
     trainer = Trainer(
