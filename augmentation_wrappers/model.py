@@ -47,7 +47,9 @@ class PLModel(LightningModule):
         self.model = model
         self.tokenizer = tokenizer
         self.config = config
-        self.loss_fun = nn.CrossEntropyLoss()
+        self.ignore_index = -100
+        self.loss_fun = nn.CrossEntropyLoss(ignore_index=self.ignore_index)
+        self.last = None
         
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -65,21 +67,36 @@ class PLModel(LightningModule):
         
         full_logits = self.model(inputs).logits
         
-        loss = self.loss_fun.cross_entropy(full_logits.view(-1, full_logits.shape[-1]), labels.view(-1), ignore_index=-100)
+        loss = self.loss_fun(full_logits.view(-1, full_logits.shape[-1]), labels.view(-1))
         
         return loss
     
+    def on_before_backward(self, _):
+        test = [{'name':n, 'weight':p} for n, p in self.model.named_parameters() if p.requires_grad]
+        print(test)
+        if self.last:
+            print((self.last - test['weight']).sum())
+        self.last = test['weight']
+    
+    
+    def on_epoch_begin(self,):
+        self.model.augment()
+    
     def configure_optimizers(self):
-        # return torch.optim.Adam(self.model.parameters(), lr=self.config.lr)
-        return DeepSpeedCPUAdam(self.model.parameters(), lr=self.config.lr)
+        return torch.optim.AdamW(self.model.parameters(), lr=self.config.lr)
+        # return DeepSpeedCPUAdam(self.model.parameters(), lr=self.config.lr)
 
 
 class AugmentedLM(LlamaForCausalLM):
     
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._augmented = False
+    
     def freeze_base(self,):
         for param in self.parameters(): param.requires_grad = False
         # self.model.embed_tokens.weight.requires_grad = True
-        self.lm_head.weight.requires_grad = True
+        # self.lm_head.weight.requires_grad = True
     
     def augment_embeddings(self, config):
         """
@@ -151,9 +168,11 @@ class AugmentedLM(LlamaForCausalLM):
         self.lm_head.weight.register_hook(lambda grad: grad*mask)
         
     def augment(self, config):
-        self.freeze_base()
-        self.augment_embeddings(config)
-        self.augment_projection(config)
+        if not self._augmented:
+            self.freeze_base()
+            self.augment_embeddings(config)
+            self.augment_projection(config)
+            self._augmented = True
     
     def save_augmentation(self, save_dir:str, local_rank:int = 0):
         """

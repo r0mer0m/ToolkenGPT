@@ -127,8 +127,8 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, f
         
     model = AugmentedLM.from_pretrained(
         'meta-llama/Llama-2-7b-chat-hf',
-        # load_in_8bit=False,# if train_config.quantization else None,
-        device_map='auto',#0,#"auto",# if train_config.quantization else None,
+        load_in_8bit=False,# if train_config.quantization else None,
+        # device_map=0,#0,#"auto",# if train_config.quantization else None,
         # low_cpu_mem_usage=True,
         # use_cache=False,
         # attn_implementation=None, #"sdpa" if train_config.use_fast_kernels else None,
@@ -137,7 +137,6 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, f
     
     if local_rank == 0:
         print("Augmenting model")
-    model.augment(augmented_config)
     
     return tokenizer, model
 
@@ -257,6 +256,18 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
         # wandb.init(project="opt", name=save_name)
         
     deepspeed_config = {
+        "prescale_gradients": False,
+        "zero_optimization": {
+            "stage": 3,
+            "offload_parameters": "cpu",
+            "contiguous_gradients": False,
+            "overlap_comm": True
+        },
+        "zero_allow_untested_optimizer": True,
+        "allgather_bucket_size": 5e8,
+        "reduce_bucket_size": 5e8
+    }
+    # deepspeed_config = {
         # "zero_allow_untested_optimizer": True,
         # "optimizer": {
         #     "type": "OneBitAdam",
@@ -285,19 +296,19 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
         #     "allgather_bucket_size": 2e8,  # Number of elements to all gather at once.
         #     "reduce_bucket_size": 2e8,  # Number of elements we reduce/allreduce at once.
         # },
-        "zero_optimization": {
-            "stage": 3,  # Enable Stage 2 ZeRO (Optimizer/Gradient state partitioning)
-            "offload_optimizer": {"device": "cpu"},
-            "offload_parameters": {
-                    "device": "cpu",
-                    "pin_memory": True,
-                    "buffer_count": 5,
-                    "buffer_size": 1e8,
-                    "max_in_cpu": 1e9
-                },  
-        },
-        'zero_force_ds_cpu_optimizer': False,
-    }
+    #     "zero_optimization": {
+    #         "stage": 3,  # Enable Stage 2 ZeRO (Optimizer/Gradient state partitioning)
+    #         "offload_optimizer": "cpu",
+    #         "offload_parameters": {
+    #                 "device": "cpu",
+    #                 "pin_memory": True,
+    #                 "buffer_count": 5,
+    #                 "buffer_size": 1e8,
+    #                 "max_in_cpu": 1e9
+    #             },  
+    #     },
+    #     'zero_force_ds_cpu_optimizer': False,
+    # }
         
     data_module = PLDataModule(input_file=input_file, dataset_name=dataset, rank=rank, world_size=world_size)#train_dataloader, test_dataloader = process_data(input_file, dataset)
     tokenizer, model = load(ckpt_dir, tokenizer_path, local_rank=0, world_size=2, func_dict=None)
@@ -305,9 +316,9 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
     model = PLModel(model=model, tokenizer=tokenizer, config=training_config)
     trainer = Trainer(
         accelerator="gpu",
-        devices=4,
-        # strategy=DeepSpeedStrategy(config=deepspeed_config),
-        strategy="deepspeed_stage_3",
+        devices=8,
+        strategy=DeepSpeedStrategy(config=deepspeed_config),
+        # strategy="deepspeed_stage_3",
         precision=16,
     )
     trainer.fit(model, datamodule=data_module)

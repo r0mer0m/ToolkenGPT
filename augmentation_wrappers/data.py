@@ -1,11 +1,30 @@
 import json
 from pytorch_lightning import LightningDataModule
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.distributed import DistributedSampler
 
 
+class BaseDataset(Dataset):
+    
+    def __init__(self, records, tokenizer):
+        self.records = records
+        self.tokenizer = tokenizer
+        
+    def __len__(self,):
+        return len(self.records)
+    
+    def __getitem__(self, i):
+        text = self.records[i]['text']
+        input_ids = self.tokenizer.encode(text)
+        return input_ids
+        
+
+def collate_fn(batch):
+    pass
+
+
 class PLDataModule(LightningDataModule):
-    def __init__(self, input_file:str, dataset_name:str, rank, world_size, batch_size=4, num_workers=2, pin_memory=True, shuffle=True):
+    def __init__(self, input_file:str, dataset_name:str, rank, world_size, batch_size=1, num_workers=2, pin_memory=True, shuffle=True):
         super().__init__()
         
         self.input_file = input_file

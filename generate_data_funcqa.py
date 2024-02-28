@@ -15,7 +15,8 @@ def process_call_annotation(annotation):
 
 def main(data):
     
-    tokenizer = AugmentedTokenizer('../ToolkenGPT/augmented_tokenizer')
+    tokenizer = AugmentedTokenizer.from_pretrained('../ToolkenGPT/augmented_tokenizer', augmentation_config_path='./augmented_tokenizer/augmentation_config.json')
+    tokenizer.pad_token_id = tokenizer.eos_token_id
     
     out_data = []
     for record in data:
