@@ -25,7 +25,7 @@ import os.path as osp
 from typing import Dict, Union
 from pathlib2 import Path
 from transformers import LlamaForCausalLM
-from lightning import LightningModule
+from pytorch_lightning import LightningModule
 from deepspeed.ops.adam import DeepSpeedCPUAdam
 
 def sample_top_p(probs, p):

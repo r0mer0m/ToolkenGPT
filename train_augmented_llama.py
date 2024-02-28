@@ -18,8 +18,8 @@ from tqdm import tqdm
 from augmentation_wrappers import AugmentedLM, AugmentedConfig, AugmentedTokenizer, PLModel, PLDataModule
 from torch.distributed.elastic.multiprocessing.errors import record
 from collections import defaultdict
-from lightning.pytorch import Trainer
-from lightning.pytorch.strategies import DeepSpeedStrategy
+from pytorch_lightning import Trainer
+from pytorch_lightning.strategies import DeepSpeedStrategy
 from transformers import (
     AutoTokenizer,
     LlamaForCausalLM,
@@ -74,7 +74,7 @@ import torch.distributed as dist
 # from typing import Type
 import time
 # from datetime import datetime
-from lightning import Trainer
+from pytorch_lightning import Trainer
     
 
 # def setup_model_parallel() -> Tuple[int, int]:
@@ -127,11 +127,10 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, f
         
     model = AugmentedLM.from_pretrained(
         'meta-llama/Llama-2-7b-chat-hf',
-        # load_in_8bit=True,# if train_config.quantization else None,
-        device_map="auto",# if train_config.quantization else None,
+        # load_in_8bit=False,# if train_config.quantization else None,
+        device_map='auto',#0,#"auto",# if train_config.quantization else None,
         # low_cpu_mem_usage=True,
-        # quantization_config=quant_config,
-        # # use_cache=False,
+        # use_cache=False,
         # attn_implementation=None, #"sdpa" if train_config.use_fast_kernels else None,
         torch_dtype=torch.bfloat16
         )
