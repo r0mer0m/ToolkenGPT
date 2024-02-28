@@ -3,13 +3,14 @@ import json
 import torch
 import os.path as osp
 from pathlib2 import Path
-from llama_augmented.tokenizer import AugmentedTokenizer
+from augmentation_wrappers.tokenizer import AugmentedTokenizer
 
+SYMBOL_SYNTHAX = '<{api_name}>'
 
 def process_call_annotation(annotation):
-    annotation = re.sub(r"=", "<EOC><BOR>", annotation)
-    annotation = re.sub(r"\<eoe\>", "<EOR>", annotation)
-    annotation = "<BOC>" + annotation
+    annotation = re.sub(r"=", SYMBOL_SYNTHAX.format(api_name='EOC') + SYMBOL_SYNTHAX.format(api_name='BOR'), annotation)
+    annotation = re.sub(r"\<eoe\>", SYMBOL_SYNTHAX.format(api_name='EOR'), annotation)
+    annotation = SYMBOL_SYNTHAX.format(api_name='BOC') + annotation
     return annotation
 
 def main(data):

@@ -15,11 +15,9 @@ from tqdm import tqdm
 # from pathlib import Path
 # from fairscale.nn.model_parallel.initialize import initialize_model_parallel
 # from llama_augmented import ModelArgs, Transformer, AugmentedTokenizer, AugmentedLM
-from augmentation_wrappers import AugmentedLM, AugmentedConfig, AugmentedTokenizer, PLModel, PLDataModule
+from augmentation_wrappers import AugmentedLM, AugmentedConfig, AugmentedTokenizer, Trainer
 from torch.distributed.elastic.multiprocessing.errors import record
 from collections import defaultdict
-from lightning.pytorch import Trainer
-from lightning.pytorch.strategies import DeepSpeedStrategy
 from transformers import (
     AutoTokenizer,
     LlamaForCausalLM,
@@ -29,52 +27,52 @@ from transformers import (
 )
 from types import SimpleNamespace
 import torch.distributed as dist
-# from torch.utils.data.distributed import DistributedSampler
+from torch.utils.data.distributed import DistributedSampler
 
 import os
-# import argparse
+import argparse
 import torch
-# import torch.nn as nn
-# import torch.nn.functional as F
-# import torch.optim as optim
-# from transformers import AutoTokenizer, GPT2TokenizerFast
-# from transformers import T5Tokenizer, T5ForConditionalGeneration
-# import functools
-# from torch.optim.lr_scheduler import StepLR
-# import torch.nn.functional as F
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from transformers import AutoTokenizer, GPT2TokenizerFast
+from transformers import T5Tokenizer, T5ForConditionalGeneration
+import functools
+from torch.optim.lr_scheduler import StepLR
+import torch.nn.functional as F
 import torch.distributed as dist
-# import torch.multiprocessing as mp
-# from torch.nn.parallel import DistributedDataParallel as DDP
-# from torch.utils.data.distributed import DistributedSampler
-# from transformers.models.llama.modeling_llama import LlamaDecoderLayer
-# from looseversion import LooseVersion
-# from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
-#  checkpoint_wrapper,
-#  CheckpointImpl,
-#  apply_activation_checkpointing_wrapper)
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
+from transformers.models.llama.modeling_llama import LlamaDecoderLayer
+from looseversion import LooseVersion
+from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+ checkpoint_wrapper,
+ CheckpointImpl,
+ apply_activation_checkpointing_wrapper)
 
-# from torch.distributed.fsdp import (
-#     FullyShardedDataParallel as FSDP,
-#     MixedPrecision,
-#     BackwardPrefetch,
-#     ShardingStrategy,
-#     FullStateDictConfig,
-#     StateDictType,
-# )
-# from torch.distributed.fsdp.wrap import (
-#     transformer_auto_wrap_policy,
-#     enable_wrap,
-#     wrap,
-# )
-# from functools import partial
-# from torch.utils.data import DataLoader
-# from pathlib import Path
-# from summarization_dataset import *
-# from transformers.models.t5.modeling_t5 import T5Block
-# from typing import Type
+from torch.distributed.fsdp import (
+    FullyShardedDataParallel as FSDP,
+    MixedPrecision,
+    BackwardPrefetch,
+    ShardingStrategy,
+    FullStateDictConfig,
+    StateDictType,
+)
+from torch.distributed.fsdp.wrap import (
+    transformer_auto_wrap_policy,
+    enable_wrap,
+    wrap,
+)
+from functools import partial
+from torch.utils.data import DataLoader
+from pathlib import Path
+from summarization_dataset import *
+from transformers.models.t5.modeling_t5 import T5Block
+from typing import Type
 import time
-# from datetime import datetime
-from lightning import Trainer
+from datetime import datetime
+
     
 
 # def setup_model_parallel() -> Tuple[int, int]:
@@ -96,18 +94,12 @@ def cleanup():
 
 
 def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, func_dict: dict) -> AugmentedLM:
-    
-    if local_rank == 0:
-        print("Loading tokenizer")
-    
     tokenizer = AugmentedTokenizer.from_pretrained(
         'meta-llama/Llama-2-7b-chat-hf',
         augmentation_config_path='./augmented_tokenizer/augmentation_config.json'
         )
     tokenizer.pad_token_id = tokenizer.eos_token_id
     
-    if local_rank == 0:
-        print("Loading config")
     
     augmented_config = AugmentedConfig.from_pretrained(
         'meta-llama/Llama-2-7b-chat-hf',
@@ -122,81 +114,64 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, f
     #     bnb_4bit_use_double_quant=False,
     # )
     
-    if local_rank == 0:
-        print("Loading model")
-        
     model = AugmentedLM.from_pretrained(
         'meta-llama/Llama-2-7b-chat-hf',
-        # load_in_8bit=True,# if train_config.quantization else None,
-        device_map="auto",# if train_config.quantization else None,
-        # low_cpu_mem_usage=True,
+        # load_in_8bit=False,# if train_config.quantization else None,
+        device_map='auto',#0,#"auto",# if train_config.quantization else None,
+        low_cpu_mem_usage=True,
         # quantization_config=quant_config,
-        # # use_cache=False,
-        # attn_implementation=None, #"sdpa" if train_config.use_fast_kernels else None,
+        # use_cache=False,
+        attn_implementation=None, #"sdpa" if train_config.use_fast_kernels else None,
         torch_dtype=torch.bfloat16
         )
     
-    if local_rank == 0:
-        print("Augmenting model")
     model.augment(augmented_config)
     
     return tokenizer, model
 
 
-# class SimpleDataset(torch.utils.data.Dataset):
-#     def __init__(self, data, tokenizer, max_length=512):
-#         self.data = data
+def process_data(input_file:str, dataset:str, rank:int=0, world_size:int=1):
+    if input_file.endswith(".json"):
+        with open(input_file, "r") as f:
+            prompts = json.load(f)
     
-#     def __len__(self):
-#         return len(self.data)
-    
-#     def __getitem__(self, idx):
-#         return self.data[idx]
+    else:
+        with open(input_file, "r") as f:
+            prompts = f.readlines()
+        prompts = [prompt.strip().replace("\\n", "\n") for prompt in prompts if len(prompt) > 1]
 
+    if dataset == "gsm8k-xl":
+        # the last 1000 prompts are the testset
+        test_len = 1000
+    elif dataset == "funcqa":
+        # the last 39 prompts are the testset
+        test_len = 39
+    elif dataset == "vh":
+        test_len = 47
+    elif dataset == "kamel":
+        test_len = 1000
+    
+    print("Total data: ")
+    testset = prompts[-test_len:]
+    trainset = prompts[:-test_len]
+    
+    # train_dataset = wikihow(tokenizer, 'train', 1500, 512, 150, False)
+    # val_dataset = wikihow(tokenizer, 'validation', 300, 512, 150, False)
 
+    sampler1 = DistributedSampler(trainset, rank=rank, num_replicas=world_size, shuffle=True)
+    sampler2 = DistributedSampler(testset, rank=rank, num_replicas=world_size)
     
-# def process_data(input_file:str, dataset:str, rank:int=0, world_size:int=1):
-#     if input_file.endswith(".json"):
-#         with open(input_file, "r") as f:
-#             prompts = json.load(f)
+    train_kwargs = {'batch_size': 4, 'sampler': sampler1}
+    test_kwargs = {'batch_size': 4, 'sampler': sampler2}
+    cuda_kwargs = {'num_workers': 2,
+                    'pin_memory': True,
+                    'shuffle': False}
     
-#     else:
-#         with open(input_file, "r") as f:
-#             prompts = f.readlines()
-#         prompts = [prompt.strip().replace("\\n", "\n") for prompt in prompts if len(prompt) > 1]
+    train_kwargs.update(cuda_kwargs)
+    test_kwargs.update(cuda_kwargs)
 
-#     if dataset == "gsm8k-xl":
-#         # the last 1000 prompts are the testset
-#         test_len = 1000
-#     elif dataset == "funcqa":
-#         # the last 39 prompts are the testset
-#         test_len = 39
-#     elif dataset == "vh":
-#         test_len = 47
-#     elif dataset == "kamel":
-#         test_len = 1000
-    
-#     print("Total data: ")
-#     testset = prompts[-test_len:]
-#     trainset = prompts[:-test_len]
-    
-#     # train_dataset = wikihow(tokenizer, 'train', 1500, 512, 150, False)
-#     # val_dataset = wikihow(tokenizer, 'validation', 300, 512, 150, False)
-
-#     sampler1 = DistributedSampler(trainset, rank=rank, num_replicas=world_size, shuffle=True)
-#     sampler2 = DistributedSampler(testset, rank=rank, num_replicas=world_size)
-    
-#     train_kwargs = {'batch_size': 4, 'sampler': sampler1}
-#     test_kwargs = {'batch_size': 4, 'sampler': sampler2}
-#     cuda_kwargs = {'num_workers': 2,
-#                     'pin_memory': True,
-#                     'shuffle': False}
-    
-#     train_kwargs.update(cuda_kwargs)
-#     test_kwargs.update(cuda_kwargs)
-
-#     train_loader = torch.utils.data.DataLoader(trainset, **train_kwargs)
-#     test_loader = torch.utils.data.DataLoader(testset, **test_kwargs)
+    train_loader = torch.utils.data.DataLoader(trainset, **train_kwargs)
+    test_loader = torch.utils.data.DataLoader(testset, **test_kwargs)
 
     
     '''
@@ -222,10 +197,10 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, f
     # ]
     # trainset = trainset * 100
     '''
-    # if rank == 0:
-    #     print(f"Trainset: {len(trainset)}, Testset: {len(testset)}")
+    if rank == 0:
+        print(f"Trainset: {len(trainset)}, Testset: {len(testset)}")
     
-    # return train_loader, test_loader
+    return train_loader, test_loader
 
 @record
 def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float = 1e-3, num_epochs: int = 20, dataset: str = "gsm8k-xl", log_prefix="", only_functoken=False, log_each=False):
@@ -237,15 +212,13 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
     random.seed(1)
     np.random.seed(1)
     
-    setup()
-    
     local_rank = int(os.environ['LOCAL_RANK'])
     rank = int(os.environ['RANK'])
     world_size = int(os.environ['WORLD_SIZE'])
     
-    # func_dict_path = f"../data/{dataset}/func_dict.json"
+    func_dict_path = f"../data/{dataset}/func_dict.json"
 
-    # func_dict = json.load(open(func_dict_path, "r"))
+    func_dict = json.load(open(func_dict_path, "r"))
     
     training_config = SimpleNamespace(lr=lr, num_epochs=num_epochs, log_each=log_each)
     
@@ -257,71 +230,54 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
     #     wandb.init(project="funcllama", name=f"{dataset}-{world_size}-load")
         # wandb.init(project="opt", name=save_name)
         
-    deepspeed_config = {
-        # "zero_allow_untested_optimizer": True,
-        # "optimizer": {
-        #     "type": "OneBitAdam",
-        #     "params": {
-        #         "lr": 3e-5,
-        #         "betas": [0.998, 0.999],
-        #         "eps": 1e-5,
-        #         "weight_decay": 1e-9,
-        #         "cuda_aware": True,
-        #     },
-        # },
-        # "scheduler": {
-        #     "type": "WarmupLR",
-        #     "params": {
-        #         "last_batch_iteration": -1,
-        #         "warmup_min_lr": 0,
-        #         "warmup_max_lr": 3e-5,
-        #         "warmup_num_steps": 100,
-        #     },
-        # },
-        # "zero_optimization": {
-        #     "stage": 2,  # Enable Stage 2 ZeRO (Optimizer/Gradient state partitioning)
-        #     "offload_optimizer": {"device": "cpu"},  # Enable Offloading optimizer state/calculation to the host CPU
-        #     "contiguous_gradients": True,  # Reduce gradient fragmentation.
-        #     "overlap_comm": True,  # Overlap reduce/backward operation of gradients for speed.
-        #     "allgather_bucket_size": 2e8,  # Number of elements to all gather at once.
-        #     "reduce_bucket_size": 2e8,  # Number of elements we reduce/allreduce at once.
-        # },
-        "zero_optimization": {
-            "stage": 3,  # Enable Stage 2 ZeRO (Optimizer/Gradient state partitioning)
-            "offload_optimizer": {"device": "cpu"},
-            "offload_parameters": {
-                    "device": "cpu",
-                    "pin_memory": True,
-                    "buffer_count": 5,
-                    "buffer_size": 1e8,
-                    "max_in_cpu": 1e9
-                },  
+    train_dataloader, test_dataloader = process_data(input_file, dataset)
+    tokenizer, model = load(ckpt_dir, tokenizer_path, local_rank=0, world_size=2, func_dict=func_dict)
+    
+    llama_auto_wrap_policy = functools.partial(
+        transformer_auto_wrap_policy,
+        transformer_layer_cls={
+            LlamaDecoderLayer,
         },
-        'zero_force_ds_cpu_optimizer': False,
-    }
-        
-    data_module = PLDataModule(input_file=input_file, dataset_name=dataset, rank=rank, world_size=world_size)#train_dataloader, test_dataloader = process_data(input_file, dataset)
-    tokenizer, model = load(ckpt_dir, tokenizer_path, local_rank=0, world_size=2, func_dict=None)
-
-    model = PLModel(model=model, tokenizer=tokenizer, config=training_config)
-    trainer = Trainer(
-        accelerator="gpu",
-        devices=4,
-        # strategy=DeepSpeedStrategy(config=deepspeed_config),
-        strategy="deepspeed_stage_3",
-        precision=16,
     )
-    trainer.fit(model, datamodule=data_module)
+    sharding_strategy: ShardingStrategy = ShardingStrategy.SHARD_GRAD_OP #for Zero2 and FULL_SHARD for Zero3
+    torch.cuda.set_device(local_rank)
     
-    # trainer = Trainer(
-    #     tokenizer=tokenizer,
-    #     model=model,
-    #     train_dataloader=train_dataloader,
-    #     test_dataloader=test_dataloader,
-    #     training_config = training_config
-    # )
+    bf16_ready = (
+        torch.version.cuda
+        and torch.cuda.is_bf16_supported()
+        and LooseVersion(torch.version.cuda) >= "11.0"
+        and dist.is_nccl_available()
+        and torch.cuda.nccl.version() >= (2, 10)
+    )
+
+    if bf16_ready:
+        bfSixteen = MixedPrecision(
+            param_dtype=torch.bfloat16,
+            # Gradient communication precision.
+            reduce_dtype=torch.bfloat16,
+            # Buffer precision.
+            buffer_dtype=torch.bfloat16,
+        )
+        mp_policy = bfSixteen
+    else:
+        mp_policy = None # defaults to fp32
+
+    model = FSDP(model,
+        auto_wrap_policy=llama_auto_wrap_policy,
+        mixed_precision=mp_policy,
+        sharding_strategy=sharding_strategy,
+        device_id=torch.cuda.current_device())
+
     
-    # trainer.train()
+    trainer = Trainer(
+        tokenizer=tokenizer,
+        model=model,
+        train_dataloader=train_dataloader,
+        test_dataloader=test_dataloader,
+        training_config = training_config
+    )
+    
+    trainer.train()
     # optimizer = torch.optim.Adam([p for p in funcmodel.parameters() if p.requires_grad], lr=lr)
     
     
@@ -424,8 +380,6 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
     #     # funcmodel.save_augmentation(save_dir, local_rank=local_rank)
     #     # # torch.save(funcmodel.func_embed.state_dict(), f"{save_dir}/epoch_{epoch}.pth")
     #     results = defaultdict(list)
-    
-    cleanup()
 
 if __name__ == "__main__":
     fire.Fire(main)

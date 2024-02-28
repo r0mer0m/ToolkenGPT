@@ -14,7 +14,7 @@ from tqdm import tqdm
 from typing import Tuple
 from pathlib import Path
 from fairscale.nn.model_parallel.initialize import initialize_model_parallel
-from llama_augmented import ModelArgs, Transformer, AugmentedTokenizer, AugmentedLM
+from augmentation_wrappers import ModelArgs, Transformer, AugmentedTokenizer, AugmentedLM
 from torch.distributed.elastic.multiprocessing.errors import record
 
 def setup_model_parallel() -> Tuple[int, int]:

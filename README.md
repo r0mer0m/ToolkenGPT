@@ -93,6 +93,22 @@ See `evaluation/eval_kamel.ipynb`
 ---------------------------------------------
 
 
+```
+<!-- conda install cuda -c nvidia/label/cuda-11.6.0 -->
+conda install cuda -c nvidia
+conda install conda-forge::deepspeed
+conda install lightning -c conda-forge
+
+conda install pytorch torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia # does not install cuda version
+```
+conda install -c conda-forge gxx
+conda install conda-forge::ninja
+pip install torch==1.13.1+cu116 torchvision==0.14.1+cu116 torchaudio==0.13.1 --extra-index-url https://download.pytorch.org/whl/cu116
+
+
+?? conda install nvidia/label/cuda-11.4.0::cuda-nvcc
+
+
 ```bash
 export LLAMA_CKPTS=../models/llama_checkpoints && echo $LLAMA_CKPTS
 ```
@@ -126,6 +142,14 @@ CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run --nproc_per_node 2 --ma
 
 For debugging use `CUDA_LAUNCH_BLOCKING=1`.
 
+2 nodes:
+
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.run --nproc_per_node 2 --master_port 1200 train_augmented_llama.py --ckpt_dir $LLAMA_CKPTS/llama-2-13b-chat --tokenizer_path ./augmented_tokenizer --input_file ../augmented_data/funcqa/train.json --lr 1e-4 --num_epochs 10 --dataset funcqa
+```
+
+4 nodes:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.run --nproc_per_node 4 --master_port 1200 train_augmented_llama.py --ckpt_dir $LLAMA_CKPTS/llama-2-13b-chat --tokenizer_path ./augmented_tokenizer --input_file ../augmented_data/funcqa/train.json --lr 1e-4 --num_epochs 10 --dataset funcqa
 ```
