@@ -62,7 +62,7 @@ class PLDataModule(LightningDataModule):
                 prompts = json.load(f)
         
         else:
-            with open(self.input_file, "r") as f:
+            with open(self.args.input_file, "r") as f:
                 prompts = f.readlines()
             prompts = [prompt.strip().replace("\\n", "\n") for prompt in prompts if len(prompt) > 1]
 
@@ -74,11 +74,11 @@ class PLDataModule(LightningDataModule):
         self.test_dataset = AugLMDataset(test_data, self.tokenizer)
             
     def train_dataloader(self):
-        sampler = DistributedSampler(self.train_dataset, rank=self.rank, num_replicas=self.world_size, shuffle=True)
-        train_loader = DataLoader(self.train_dataset, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=self.pin_memory, sampler=sampler)
+        sampler = DistributedSampler(self.train_dataset, rank=self.args.rank, num_replicas=self.args.world_size, shuffle=True)
+        train_loader = DataLoader(self.train_dataset, batch_size=self.args.batch_size, num_workers=self.args.num_workers, pin_memory=self.args.pin_memory, sampler=sampler)
         return train_loader
     
     def test_dataloader(self):
-        sampler = DistributedSampler(self.test_dataset, rank=self.rank, num_replicas=self.world_size)
-        test_loader = DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=self.pin_memory, sampler=sampler)
+        sampler = DistributedSampler(self.test_dataset, rank=self.args.rank, num_replicas=self.args.world_size)
+        test_loader = DataLoader(self.test_dataset, batch_size=self.args.batch_size, num_workers=self.args.num_workers, pin_memory=self.args.pin_memory, sampler=sampler)
         return test_loader
