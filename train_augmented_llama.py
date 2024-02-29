@@ -95,9 +95,9 @@ def cleanup():
     dist.destroy_process_group()
 
 
-def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, func_dict: dict) -> AugmentedLM:
+def load(ckpt_dir: str, tokenizer_path: str, rank: int, world_size: int) -> AugmentedLM:
     
-    if local_rank == 0:
+    if rank == 0:
         print("Loading tokenizer")
     
     tokenizer = AugmentedTokenizer.from_pretrained(
@@ -106,13 +106,13 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, f
         )
     tokenizer.pad_token_id = tokenizer.eos_token_id
     
-    if local_rank == 0:
+    if rank == 0:
         print("Loading config")
     
     augmented_config = AugmentedConfig.from_pretrained(
         'meta-llama/Llama-2-7b-chat-hf',
         augment=True,
-        aug_vocab_size = 8 # tokenizer.n_aug_words,
+        aug_vocab_size = tokenizer.aug_vocab_size # tokenizer.n_aug_words,
     )
     compute_dtype = getattr(torch, "bfloat16")
     # quant_config = BitsAndBytesConfig(
@@ -122,7 +122,7 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, f
     #     bnb_4bit_use_double_quant=False,
     # )
     
-    if local_rank == 0:
+    if rank == 0:
         print("Loading model")
         
     model = AugmentedLM.from_pretrained(
@@ -135,8 +135,9 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int, f
         torch_dtype=torch.bfloat16
         )
     
-    if local_rank == 0:
+    if rank == 0:
         print("Augmenting model")
+    model.augment(augmented_config)
     
     return tokenizer, model
 
@@ -245,7 +246,7 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
 
     # func_dict = json.load(open(func_dict_path, "r"))
     
-    training_config = SimpleNamespace(lr=lr, num_epochs=num_epochs, log_each=log_each)
+    training_config = SimpleNamespace(lr=lr, num_epochs=num_epochs, log_each=log_each, rank=rank)
     data_config = SimpleNamespace(input_file=input_file, dataset_name=dataset, 
                                   rank=rank, world_size=world_size, 
                                   batch_size=1, num_workers=2, pin_memory=True)
@@ -254,9 +255,9 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
     # if local_rank > 0:
     #     sys.stdout = open(os.devnull, 'w')
 
-    # if local_rank == 0:
-    #     wandb.init(project="funcllama", name=f"{dataset}-{world_size}-load")
-        # wandb.init(project="opt", name=save_name)
+    if local_rank == 0:
+        wandb.init(project="funcllama", name=f"{dataset}-{world_size}-load")
+        wandb.init(project="opt", name='tests')
         
     deepspeed_config = {
         "prescale_gradients": False,
@@ -313,7 +314,7 @@ def main(ckpt_dir: str, tokenizer_path: str, input_file: str = None, lr: float =
     #     'zero_force_ds_cpu_optimizer': False,
     # }
         
-    tokenizer, model = load(ckpt_dir, tokenizer_path, local_rank=0, world_size=2, func_dict=None)
+    tokenizer, model = load(ckpt_dir, tokenizer_path, rank=rank, world_size=world_size)
     data_module = PLDataModule(tokenizer=tokenizer, data_args=data_config)#input_file=input_file, dataset_name=dataset, rank=rank, world_size=world_size)#train_dataloader, test_dataloader = process_data(input_file, dataset)
 
     model = PLModel(model=model, tokenizer=tokenizer, config=training_config)

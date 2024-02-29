@@ -9,6 +9,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import os.path as osp
+from collections import defaultdict
+import wandb
 # import copy
 # import random
 # import json
@@ -27,6 +29,7 @@ from pathlib2 import Path
 from transformers import LlamaForCausalLM
 from pytorch_lightning import LightningModule
 from deepspeed.ops.adam import DeepSpeedCPUAdam
+
 
 def sample_top_p(probs, p):
     probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
@@ -54,6 +57,10 @@ class PLModel(LightningModule):
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
     
+    def on_train_epoch_start(self) -> None:
+        self.results = defaultdict(list)
+        return super().on_train_epoch_start()
+    
     def training_step(self, batch, batch_idx):
         if not isinstance(batch, dict):
             assert len(batch) == 1
@@ -62,11 +69,16 @@ class PLModel(LightningModule):
         input_ids = batch['input_ids'].to("cuda")
         target_ids = batch['target_ids'].to("cuda")
         
-        full_logits = self.model(input_ids).logits
+        print("input_ids shape: ", input_ids.shape)
+        print("target_ids shape: ", target_ids.shape)
+        print("input_ids shape: ", input_ids)
+        print("target_ids: ", target_ids)
         
-        loss = self.loss_fun(full_logits.view(-1, full_logits.shape[-1]), target_ids.view(-1))
+        logits = self.model(input_ids).logits
         
-        return loss
+        loss = self.loss_fun(logits.view(-1, logits.shape[-1]), target_ids.view(-1))
+        
+        return {'loss': loss, 'logits': logits}
     
     # def on_before_backward(self, _):
     #     test = [{'name':n, 'weight':p} for n, p in self.model.named_parameters() if p.requires_grad]
@@ -76,7 +88,72 @@ class PLModel(LightningModule):
     #     self.last = test['weight']
     
     def on_epoch_begin(self,):
-        self.model.augment()
+        self.model.register_backward_hooks()
+        
+    
+    def _compute_trigger_metrics(self, label_funcs, pred_funcs):
+        tp = torch.sum(label_funcs * pred_funcs, dim=-1).detach().cpu().numpy()
+        pred_funcs = torch.sum(pred_funcs, dim=-1).detach().cpu().numpy()
+        true = torch.sum(label_funcs, dim=-1).detach().cpu().numpy()
+        results = {
+            "tp": tp,
+            "pred": pred_funcs,
+            "true": true
+        }
+        return results
+    
+    def on_train_batch_end(self, outputs, batch, batch_idx: int) -> None:
+        '''
+        Metrics recording and computation
+        '''
+        # return super().on_train_batch_end(outputs, batch, batch_idx)
+        if self.config.rank == 0:
+            wandb.log({"loss": outputs['loss'].item()})
+        
+        for i, r in metrics.items(): self.results[i].append(r)
+            
+        # (bsz, seqlen, aug_vocab_size) -> (bsz, seqlen)
+        pred = torch.argmax(outputs['logits'], dim=-1)
+        pred = pred.view(-1)
+        labels = batch['target_ids'].view(-1)
+
+        label_funcs = [labels == idx for idx in self.tokenizer.api_ids]
+        pred_funcs = [pred == idx for idx in self.tokenizer.api_ids]
+        label_funcs = torch.stack(label_funcs, dim=0)
+        pred_funcs = torch.stack(pred_funcs, dim=0)
+        
+        metrics = self._compute_trigger_metrics(label_funcs, pred_funcs)
+        
+        
+        if (batch_idx + 1) % 20 == 0 and self.config.rank == 0:
+            
+            for i, api_name in enumerate(self.tokenizer.api_names):
+                tp = sum([r[i] for r in self.results["tp"]])
+                pred = sum([r[i] for r in self.results["pred"]])
+                true = sum([r[i] for r in self.results["true"]])
+            
+                wandb.log({
+                    f"precision-{api_name}": tp / (pred + 1e-8),
+                    f"recall-{api_name}": tp / (true + 1e-8),
+                    f"f1-{api_name}": 2 * tp / (pred + true + 1e-8)
+                })
+            
+            tp = sum([r.sum() for r in self.results["tp"]])
+            pred = sum([r.sum() for r in self.results["pred"]])
+            true = sum([r.sum() for r in self.results["true"]])
+        
+            wandb.log({
+                f"precision": tp / (pred + 1e-8),
+                f"recall": tp / (true + 1e-8),
+                f"f1": 2 * tp / (pred + true + 1e-8)
+            })
+            
+            self.results = defaultdict(list)
+            
+            
+        
+        
+            
     
     def configure_optimizers(self):
         return torch.optim.AdamW([p for p in self.model.parameters() if p.requires_grad], lr=self.config.lr)
@@ -87,7 +164,7 @@ class AugmentedLM(LlamaForCausalLM):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._augmented = False
+        self._hook_registred = False
     
     def freeze_base(self,):
         for param in self.parameters(): param.requires_grad = False
@@ -124,9 +201,6 @@ class AugmentedLM(LlamaForCausalLM):
         
         # unfreeze new embeddings & register hook
         self.model.embed_tokens.weight.requires_grad = True
-        mask = torch.zeros_like(self.model.embed_tokens.weight)
-        mask[-config.aug_vocab_size:] = 1.
-        self.model.embed_tokens.weight.register_hook(lambda grad: grad*mask)
         
     def augment_projection(self, config):
         """
@@ -159,16 +233,31 @@ class AugmentedLM(LlamaForCausalLM):
         
         # unfreeze new embeddings & register hook
         self.lm_head.weight.requires_grad = True
-        mask = torch.zeros_like(self.lm_head.weight)
-        mask[-config.aug_vocab_size:] = 1.
-        self.lm_head.weight.register_hook(lambda grad: grad*mask)
         
     def augment(self, config):
-        if not self._augmented:
-            self.freeze_base()
-            self.augment_embeddings(config)
-            self.augment_projection(config)
-            self._augmented = True
+        self.freeze_base()
+        self.augment_embeddings(config)
+        self.augment_projection(config)
+        
+        # Workaround for hooks
+        self.aug_vocab_size = config.aug_vocab_size
+        
+            
+    def _register_backward_hooks(self, ):
+        # Embeddings
+        mask = torch.zeros_like(self.model.embed_tokens.weight)
+        mask[-self.aug_vocab_size:] = 1.
+        self.model.embed_tokens.weight.register_hook(lambda grad: grad*mask)
+        
+        # LM Head
+        mask = torch.zeros_like(self.lm_head.weight)
+        mask[-self.aug_vocab_size:] = 1.
+        self.lm_head.weight.register_hook(lambda grad: grad*mask)
+    
+    def register_backward_hooks(self,):        
+        if not self._hook_registred:
+            self._hook_registred = True
+            self._register_backward_hooks(self)
     
     def save_augmentation(self, save_dir:str, local_rank:int = 0):
         """

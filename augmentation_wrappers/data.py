@@ -21,19 +21,34 @@ class AugLMDataset(Dataset):
     def __len__(self,):
         return len(self.records)
     
+    
+    def _get_token_indices(self, text_ids, token_id):
+        position_idxs = (text_ids == token_id).nonzero()
+        print(position_idxs.shape)
+        if len(position_idxs.shape) > 1:
+            position_idxs = position_idxs.squeeze(1)
+        return position_idxs.tolist()    
+    
     def __getitem__(self, i):
         text = self.records[i]['text']
         
-        input_ids = torch.tensor(self.tokenizer.encode(text, bos=True, eos=True))[:]
+        input_ids = torch.tensor(self.tokenizer.encode(text))[:] # bos=True, eos=True
         target_ids = input_ids.clone()
         
         # ignore indices before first API call. 
-        idxs = (target_ids == self.tokenizer.boc_id).nonzero()
-        idx = idxs[0] if len(idxs.shape) == 1 else idxs[0][0]
-        target_ids[:idx] = self.ignore_index
+        boc_idxs = self._get_token_indices(target_ids, self.tokenizer.boc_id)# (target_ids == self.tokenizer.boc_id).nonzero().squeeze().tolist()
+        if boc_idxs:
+            print(boc_idxs)
+            target_ids[:boc_idxs[0]] = self.ignore_index
+            
+            # ignore response indices
+            bor_idxs = self._get_token_indices(target_ids, self.tokenizer.bor_id)
+            eor_idxs = self._get_token_indices(target_ids, self.tokenizer.eor_id)
+            for bor_idx, eor_idx in zip(bor_idxs, eor_idxs):
+                target_ids[bor_idx + 1: eor_idx] = self.ignore_index
         
-        input_ids = input_ids[:-1].expand(1, -1).to("cuda")
-        target_ids = target_ids[1:].expand(1, -1).to("cuda")
+        input_ids = input_ids[:-1]
+        target_ids = target_ids[1:]
         
         record = {
             "input_ids": input_ids,
@@ -44,7 +59,7 @@ class AugLMDataset(Dataset):
         
 
 def collate_fn(batch):
-    pass
+    raise NotImplementedError()
 
 
 class PLDataModule(LightningDataModule):
@@ -57,8 +72,8 @@ class PLDataModule(LightningDataModule):
             self.args.test_len = TEST_LEN[self.args.dataset_name]
     
     def setup(self, stage=None):
-        if self.input_file.endswith(".json"):
-            with open(self.input_file, "r") as f:
+        if self.args.input_file.endswith(".json"):
+            with open(self.args.input_file, "r") as f:
                 prompts = json.load(f)
         
         else:
