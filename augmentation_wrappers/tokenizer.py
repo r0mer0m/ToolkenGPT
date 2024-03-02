@@ -13,7 +13,7 @@ class AugmentedTokenizer(LlamaTokenizer):
     def __init__(self, augmentation_config: dict, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
-        if augmentation_config and augmentation_config['api_names']:
+        if augmentation_config and augmentation_config.api_names:
             # special tokens
             self.base_vocab_size = self.vocab_size
             
@@ -30,7 +30,7 @@ class AugmentedTokenizer(LlamaTokenizer):
                         variable in `AugmentedTokenizer` to make it unique"
             
             # Add api tokens
-            self.api_names = augmentation_config['api_names']
+            self.api_names = augmentation_config.api_names
             
             # self.api_names = ["add", "subtract", "multiply", "divide", "power", "sqrt", "log", "ln", "lcm", "gcd", "remainder", "choose", "permutate"]
             self.api_symbols = [self.SYMBOL_SYNTHAX.format(api_name=api_name) for api_name in self.api_names]
@@ -54,11 +54,8 @@ class AugmentedTokenizer(LlamaTokenizer):
         
     
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path:str, augmentation_config_path:str='', *args, **kwargs):
-        if augmentation_config_path:
-            with open(augmentation_config_path, 'r') as fp:
-                augmentation_config = json.load(fp)
-        else:
+    def from_pretrained(cls, pretrained_model_name_or_path:str, augmentation_config:str='', *args, **kwargs):
+        if not augmentation_config:
             warnings.warn('`augmentation_config_path` nor provided.')
             augmentation_config = {}
 

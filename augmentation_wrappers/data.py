@@ -24,7 +24,6 @@ class AugLMDataset(Dataset):
     
     def _get_token_indices(self, text_ids, token_id):
         position_idxs = (text_ids == token_id).nonzero()
-        print(position_idxs.shape)
         if len(position_idxs.shape) > 1:
             position_idxs = position_idxs.squeeze(1)
         return position_idxs.tolist()    
@@ -38,7 +37,6 @@ class AugLMDataset(Dataset):
         # ignore indices before first API call. 
         boc_idxs = self._get_token_indices(target_ids, self.tokenizer.boc_id)# (target_ids == self.tokenizer.boc_id).nonzero().squeeze().tolist()
         if boc_idxs:
-            print(boc_idxs)
             target_ids[:boc_idxs[0]] = self.ignore_index
             
             # ignore response indices
@@ -65,11 +63,8 @@ def collate_fn(batch):
 class PLDataModule(LightningDataModule):
     def __init__(self, tokenizer, data_args):
         super().__init__()
-        
         self.tokenizer = tokenizer
         self.args = data_args
-        if not hasattr(data_args, 'test_len'):
-            self.args.test_len = TEST_LEN[self.args.dataset_name]
     
     def setup(self, stage=None):
         if self.args.input_file.endswith(".json"):

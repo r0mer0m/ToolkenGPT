@@ -1,1 +1,17 @@
-{"api_names": ["add", "subtract", "multiply", "divide", "power", "sqrt", "log", "ln", "lcm", "gcd", "remainder", "choose", "permutate"]}
+{
+    "api_names": [
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "power",
+        "sqrt",
+        "log",
+        "ln",
+        "lcm",
+        "gcd",
+        "remainder",
+        "choose",
+        "permutate"
+    ]
+}

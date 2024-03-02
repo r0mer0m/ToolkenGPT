@@ -1,34 +1,13 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# This software may be used and distributed according to the terms of the GNU General Public License version 3.
-
-# from typing import Optional, Tuple
-# from dataclasses import dataclass
 import math
-from typing import List
+import wandb
 import torch
 from torch import nn
-import torch.nn.functional as F
 import os.path as osp
-from collections import defaultdict
-import wandb
-# import copy
-# import random
-# import json
-# import fairscale.nn.model_parallel.initialize as fs_init
-# from fairscale.nn.model_parallel.layers import (
-#     ParallelEmbedding,
-#     RowParallelLinear,
-#     ColumnParallelLinear,
-#     _initialize_affine_weight,
-#     get_model_parallel_rank,
-#     get_model_parallel_world_size
-# )
-# from transformers import AutoTokenizer, AutoModel
-from typing import Dict, Union
 from pathlib2 import Path
+from typing import Dict, Union
+from collections import defaultdict
 from transformers import LlamaForCausalLM
 from pytorch_lightning import LightningModule
-from deepspeed.ops.adam import DeepSpeedCPUAdam
 
 
 def sample_top_p(probs, p):
@@ -45,10 +24,11 @@ def sample_top_p(probs, p):
 
 class PLModel(LightningModule):
     
-    def __init__(self, model: nn.Module, tokenizer, config: Dict[str, Union[str, int]]):
+    def __init__(self, model: nn.Module, tokenizer, rank:int, config: Dict[str, Union[str, int]]):
         super().__init__()
         self.model = model
         self.tokenizer = tokenizer
+        self.rank = rank
         self.config = config
         self.ignore_index = -100
         self.loss_fun = nn.CrossEntropyLoss(ignore_index=self.ignore_index)
@@ -69,29 +49,28 @@ class PLModel(LightningModule):
         input_ids = batch['input_ids'].to("cuda")
         target_ids = batch['target_ids'].to("cuda")
         
-        print("input_ids shape: ", input_ids.shape)
-        print("target_ids shape: ", target_ids.shape)
-        print("input_ids shape: ", input_ids)
-        print("target_ids: ", target_ids)
-        
         logits = self.model(input_ids).logits
         
         loss = self.loss_fun(logits.view(-1, logits.shape[-1]), target_ids.view(-1))
         
         return {'loss': loss, 'logits': logits}
     
-    # def on_before_backward(self, _):
-    #     test = [{'name':n, 'weight':p} for n, p in self.model.named_parameters() if p.requires_grad]
-    #     print(test)
-    #     if self.last:
-    #         print((self.last - test['weight']).sum())
-    #     self.last = test['weight']
-    
     def on_epoch_begin(self,):
         self.model.register_backward_hooks()
         
     
-    def _compute_trigger_metrics(self, label_funcs, pred_funcs):
+    def _compute_trigger_metrics(self, logtis, target_ids):
+        
+        # (bsz, seqlen, aug_vocab_size) -> (bsz, seqlen)
+        pred = torch.argmax(logtis, dim=-1)
+        pred = pred.view(-1)
+        labels = target_ids.view(-1)
+
+        label_funcs = [labels == idx for idx in self.tokenizer.api_ids]
+        pred_funcs = [pred == idx for idx in self.tokenizer.api_ids]
+        label_funcs = torch.stack(label_funcs, dim=0)
+        pred_funcs = torch.stack(pred_funcs, dim=0)
+        
         tp = torch.sum(label_funcs * pred_funcs, dim=-1).detach().cpu().numpy()
         pred_funcs = torch.sum(pred_funcs, dim=-1).detach().cpu().numpy()
         true = torch.sum(label_funcs, dim=-1).detach().cpu().numpy()
@@ -107,25 +86,13 @@ class PLModel(LightningModule):
         Metrics recording and computation
         '''
         # return super().on_train_batch_end(outputs, batch, batch_idx)
-        if self.config.rank == 0:
+        if self.rank == 0:
             wandb.log({"loss": outputs['loss'].item()})
         
+        metrics = self._compute_trigger_metrics(outputs['logits'], batch['target_ids'])
         for i, r in metrics.items(): self.results[i].append(r)
-            
-        # (bsz, seqlen, aug_vocab_size) -> (bsz, seqlen)
-        pred = torch.argmax(outputs['logits'], dim=-1)
-        pred = pred.view(-1)
-        labels = batch['target_ids'].view(-1)
-
-        label_funcs = [labels == idx for idx in self.tokenizer.api_ids]
-        pred_funcs = [pred == idx for idx in self.tokenizer.api_ids]
-        label_funcs = torch.stack(label_funcs, dim=0)
-        pred_funcs = torch.stack(pred_funcs, dim=0)
         
-        metrics = self._compute_trigger_metrics(label_funcs, pred_funcs)
-        
-        
-        if (batch_idx + 1) % 20 == 0 and self.config.rank == 0:
+        if (batch_idx + 1) % 20 == 0 and self.rank == 0:
             
             for i, api_name in enumerate(self.tokenizer.api_names):
                 tp = sum([r[i] for r in self.results["tp"]])
@@ -149,15 +116,9 @@ class PLModel(LightningModule):
             })
             
             self.results = defaultdict(list)
-            
-            
-        
-        
-            
     
     def configure_optimizers(self):
         return torch.optim.AdamW([p for p in self.model.parameters() if p.requires_grad], lr=self.config.lr)
-        # return DeepSpeedCPUAdam(self.model.parameters(), lr=self.config.lr)
 
 
 class AugmentedLM(LlamaForCausalLM):
@@ -208,7 +169,7 @@ class AugmentedLM(LlamaForCausalLM):
         """
         # initialize augmented embeddings
         base_weights = self.lm_head.weight
-        print('projection weights: ', base_weights.shape)
+        # print('projection weights: ', base_weights.shape)
         aug_weight = torch.Tensor(config.aug_vocab_size, config.hidden_size)
         aug_weight = aug_weight.to(base_weights.device).to(base_weights.dtype)
         
