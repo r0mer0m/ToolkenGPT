@@ -44,6 +44,7 @@ def load(model_config, augmentation_config, rank: int, world_size: int) -> Augme
     if rank == 0: print("Loading model")
     model = AugmentedLM.from_pretrained(
         model_config.base_model_id,
+        load_in_8bit=False,
         torch_dtype=torch.bfloat16
         )
     
@@ -54,7 +55,7 @@ def load(model_config, augmentation_config, rank: int, world_size: int) -> Augme
 
 
 @record
-@hydra.main(config_path="./configs/runs")
+@hydra.main(version_base=None, config_path="./configs/runs")
 def main(config):
 
     torch.manual_seed(1)
@@ -66,10 +67,15 @@ def main(config):
     np.random.seed(1)
     
     setup()
-    
+    import os; 
+    print(os.getcwd())
+    print(config.training.deepspeed_config)
     local_rank = int(os.environ['LOCAL_RANK'])
     rank = int(os.environ['RANK'])
     world_size = int(os.environ['WORLD_SIZE'])
+    
+    if rank == 0:
+        print(f"{local_rank=}\n{rank=}\n{world_size=}")
 
     if local_rank == 0:
         wandb.init(project="funcllama", name=f"{config.data.dataset_name}-{world_size}-load")
@@ -83,24 +89,11 @@ def main(config):
         accelerator="gpu",
         max_epochs=config.training.num_epochs,
         devices=world_size,
-        strategy=DeepSpeedStrategy(config='./configs/deepspeed/stage3.json'),
+        strategy=DeepSpeedStrategy(config=config.training.deepspeed_config),
         # strategy="deepspeed_stage_3",
         precision=16,
     )
     trainer.fit(model, datamodule=data_module)
-    
-    # trainer = Trainer(
-    #     tokenizer=tokenizer,
-    #     model=model,
-    #     train_dataloader=train_dataloader,
-    #     test_dataloader=test_dataloader,
-    #     training_config = training_config
-    # )
-    
-    # trainer.train()
-    # optimizer = torch.optim.Adam([p for p in funcmodel.parameters() if p.requires_grad], lr=lr)
-    
-    
     
     # funcmodel.train()
     # for epoch in range(num_epochs):
