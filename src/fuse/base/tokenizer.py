@@ -38,6 +38,7 @@ class AugmentedTokenizer(LlamaTokenizer):
             self.n_api_tokens = self.add_tokens(self.api_symbols, special_tokens=True)
             self.api_ids = self.convert_tokens_to_ids(self.api_symbols)
             self.id_to_api = dict(zip(self.api_ids, self.api_names))
+            self.symbol_to_api = dict(zip(self.api_symbols, self.api_names))
             
             
             assert self.n_api_tokens == len(self.api_names), "Your tokenizer contains one or more api_symbols by default. Please update the `SYMBOL_SYNTHAX` \

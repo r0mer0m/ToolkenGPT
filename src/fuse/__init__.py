@@ -3,11 +3,10 @@
 
 # from .generation import LLaMA
 # from .model import ModelArgs, Transformer, AugmentedLM
-from .model import AugmentedLM, PLModel
-from .config import AugmentedConfig
-from .tokenizer import AugmentedTokenizer
-from .trainer import Trainer
-from .data import PLDataModule
-
-
+from .lightning.model import  PLModel
+from .base.model import AugmentedLM
+from .base.config import AugmentedConfig
+from .base.tokenizer import AugmentedTokenizer
+from ._trainer import Trainer
+from .lightning.data import PLDataModule
 

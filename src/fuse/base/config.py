@@ -12,9 +12,5 @@ class AugmentedConfig(AutoConfig):
         config = super().from_pretrained(pretrained_model_name_or_path, **kwargs)
         config.aug_vocab_size = aug_vocab_size
         config.augment = augment
-        # config.max_batch_size = 32
-        # config.max_seq_len = 2048
-        # config.norm_eps = 1e-5
-        # config.multiple_of = 256
         return config
         

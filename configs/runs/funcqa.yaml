@@ -1,9 +1,0 @@
-defaults:
-  - model: llama2
-  - augmentation: funcqa_specific
-  - data: funcqa
-
-training:
-  lr: 1e-4
-  num_epochs: 10
-  deepspeed_config: './configs/deepspeed/stage3.json'

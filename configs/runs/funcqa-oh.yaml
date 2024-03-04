@@ -1,0 +1,12 @@
+defaults:
+  - model: llama2
+  - augmentation: funcqa_specific
+  - data: funcqa_oh
+
+training:
+  lr: 1e-4
+  num_epochs: 10
+  deepspeed_config: './configs/deepspeed/stage3_v2.json'
+
+out_checkpoint_dir: './checkpoints/${data.dataset_name}'
+checkpoint_filepath: './checkpoints/${data.dataset_name}/checkpoint.pt'
