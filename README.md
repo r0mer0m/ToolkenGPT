@@ -111,6 +111,7 @@ pip install torch==1.13.1+cu116 torchvision==0.14.1+cu116 torchaudio==0.13.1 --e
 
 ```bash
 export LLAMA_CKPTS=../models/llama_checkpoints && echo $LLAMA_CKPTS
+export PATH_TO_LLAMA=../models/llama_checkpoints && echo $PATH_TO_LLAMA
 ```
 
 
@@ -159,6 +160,17 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.run --nproc_per_node 4 
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python3 -m torch.distributed.run --nproc_per_node 8 --master_port 1200 augmented_llama_train.py --ckpt_dir $LLAMA_CKPTS/llama-2-13b-chat --tokenizer_path ./augmented_tokenizer --input_file ../augmented_data/funcqa/train.json --lr 1e-4 --num_epochs 10 --dataset funcqa
 ```
 
+
+## Training
 ```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 python3 -m torch.distributed.run --nproc_per_node 4 --master_port 1200 augmented_llama_train.py --config-name funcqa-oh
+CUDA_VISIBLE_DEVICES=0,1 python3 -m torch.distributed.run --nproc_per_node 2 --master_port 1200 augmented_llama_train.py --config-name funcqa-oh
+```
+
+## Eval
+```bash
+CUDA_VISIBLE_DEVICES=0,1 python3 -m torch.distributed.run --nproc_per_node 2 --master_port 1200 augmented_llama_inference.py --config-name funcqa-oh
+```
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 python3 -m torch.distributed.run --nproc_per_node 2 --master_port 1200 augmented_llama_train.py --config-name funcqa-oh-toolkengpt run_name=test-funcqa >> logs.txt
 ```

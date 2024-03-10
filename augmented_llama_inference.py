@@ -5,7 +5,7 @@ import wandb
 import random
 import numpy as np
 from fuse.utils import load
-from fuse import PLDataModule
+from fuse import PLDataModule, PLModel
 import torch.distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
 
@@ -40,12 +40,16 @@ def main(config):
     if local_rank == 0:
         wandb.init(project="funcllama", name=f"{config.data.dataset_name}-{world_size}-load")
         
-    tokenizer, model = load(config.model, config.augmentation, rank=rank, world_size=world_size)
+    tokenizer, _model = load(config.model, rank, 
+                        augmentation_config=config.augmentation, 
+                        checkpoint_filepath=config.best_checkpoint_filepath)
     data_module = PLDataModule(tokenizer=tokenizer, data_args=config.data,
                                rank=rank, world_size=world_size)
+    model = PLModel.load_from_checkpoint(config.best_checkpoint_filepath, model=_model)
+    model = model.model
+    
     data_module.setup("test")
     test_dataloader = data_module.test_dataloader()
-    
     model.eval()
     for i, batch in enumerate(test_dataloader):
         target = batch['target']
@@ -54,27 +58,6 @@ def main(config):
             print(output)
             print(target)
             break
-    
-
-    # model = PLModel(model=model, tokenizer=tokenizer, rank=rank, config=config.training)
-    # checkpoint_callback = ModelCheckpoint(
-    #     dirpath=f'./checkpoints/{config.data.dataset_name}/', # <--- specify this on the trainer itself for version control
-    #     filename="fa_classifier_{epoch:02d}",
-    #     every_n_epochs=1,
-    #     save_top_k=-1,
-    #     monitor="val_loss",
-    # )
-    # trainer = Trainer(
-    #     accelerator="gpu",
-    #     max_epochs=config.training.num_epochs,
-    #     callbacks=[checkpoint_callback],
-    #     check_val_every_n_epoch=1,
-    #     devices=world_size,
-    #     strategy=DeepSpeedStrategy(config=config.training.deepspeed_config),
-    #     # strategy="deepspeed_stage_3",
-    #     precision=16,
-    # )
-    # trainer.fit(model, datamodule=data_module)
     
     cleanup()
 

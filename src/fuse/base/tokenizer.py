@@ -8,28 +8,32 @@ logger = getLogger()
 
 
 class AugmentedTokenizer(LlamaTokenizer):
-    SYMBOL_SYNTHAX = '<{api_name}>'
+    SYMBOL_SYNTHAX = '<<<{api_name}>>>'
     
     def __init__(self, augmentation_config: dict, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         if augmentation_config and augmentation_config.api_names:
-            # special tokens
+            
             self.base_vocab_size = self.vocab_size
+            ### control tokens
+            # control_tokens = ['BOC', 'EOC', 'BOR', 'EOR']
             
-            # Add control tokens
-            self.api_control_tokens = [self.SYMBOL_SYNTHAX.format(api_name=control_token) for control_token in ['BOC', 'EOC', 'BOR', 'EOR']]
-            self.n_control_tokens = self.add_tokens(self.api_control_tokens, special_tokens=True)
+            # # Add control tokens
+            # self.api_control_tokens = [self.SYMBOL_SYNTHAX.format(api_name=control_token) for control_token in control_tokens]
+            # self.n_control_tokens = self.add_tokens(self.api_control_tokens, special_tokens=True)
             
-            (self.boc_id, 
-            self.eoc_id, 
-            self.bor_id, 
-            self.eor_id) = self.convert_tokens_to_ids(self.api_control_tokens)
+            # (self.boc_id, 
+            # self.eoc_id, 
+            # self.bor_id, 
+            # self.eor_id) = self.convert_tokens_to_ids(self.api_control_tokens)
             
-            assert self.n_control_tokens == len(self.api_control_tokens), "Your tokenizer contains one or more api_control_tokens by default. Please update the `SYMBOL_SYNTHAX` \
-                        variable in `AugmentedTokenizer` to make it unique"
+            # assert self.n_control_tokens == len(self.api_control_tokens), "Your tokenizer contains one or more api_control_tokens by default. Please update the `SYMBOL_SYNTHAX` \
+            #             variable in `AugmentedTokenizer` to make it unique"
             
-            # Add api tokens
+            self.n_control_tokens = 0
+            
+            ####### Add api tokens
             self.api_names = augmentation_config.api_names
             
             # self.api_names = ["add", "subtract", "multiply", "divide", "power", "sqrt", "log", "ln", "lcm", "gcd", "remainder", "choose", "permutate"]
@@ -39,6 +43,7 @@ class AugmentedTokenizer(LlamaTokenizer):
             self.api_ids = self.convert_tokens_to_ids(self.api_symbols)
             self.id_to_api = dict(zip(self.api_ids, self.api_names))
             self.symbol_to_api = dict(zip(self.api_symbols, self.api_names))
+            self.symbol_to_id = dict(zip(self.api_symbols, self.api_ids))
             
             
             assert self.n_api_tokens == len(self.api_names), "Your tokenizer contains one or more api_symbols by default. Please update the `SYMBOL_SYNTHAX` \

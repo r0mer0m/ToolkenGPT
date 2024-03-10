@@ -4,6 +4,8 @@ import torch
 from torch import nn
 from transformers import LlamaForCausalLM
 from funchub.math import *
+import deepspeed
+# from deepspeed.ops import deepspeed_hook
 
 def sample_top_p(probs, p):
     probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
@@ -22,6 +24,13 @@ class AugmentedLM(LlamaForCausalLM):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._hook_registred = False
+        
+        for param in self.parameters(): param.requires_grad = False
+        self.model.embed_tokens.weight.requires_grad = True
+        self.lm_head.weight.requires_grad = True
+        
+        # deepspeed.zero.register_external_parameter(self, self.model.embed_tokens.weight)
+        # deepspeed.zero.register_external_parameter(self, self.lm_head.weight)
     
     def freeze_base(self,):
         for param in self.parameters(): param.requires_grad = False
@@ -92,8 +101,10 @@ class AugmentedLM(LlamaForCausalLM):
         self.lm_head.weight.requires_grad = True
         
     def augment(self, config):
-        self.freeze_base()
-        self.augment_embeddings(config)
+        # self.freeze_base()
+        self.augment_embeddings = config.augment_embeddings
+        if config.augment_embeddings:
+            self.augment_embeddings(config)
         self.augment_projection(config)
         
         # Workaround for hooks
@@ -102,19 +113,52 @@ class AugmentedLM(LlamaForCausalLM):
             
     def _register_backward_hooks(self, ):
         # Embeddings
-        mask = torch.zeros_like(self.model.embed_tokens.weight)
-        mask[-self.aug_vocab_size:] = 1.
-        self.model.embed_tokens.weight.register_hook(lambda grad: grad*mask)
+        class MaskTokens(object):
+            def __init__(self, aug_vocab_size):
+                self.aug_vocab_size = aug_vocab_size
+            
+            def mask(self, grad):
+                mask = torch.zeros_like(grad)
+                mask[-self.aug_vocab_size:] = 1.
+                out = grad*mask
+                # print("Gradient:", out)
+                return out
+                
+            def full_mask(self, grad):
+                mask = torch.zeros_like(grad)
+                out = grad*mask
+                # print("This grad should be all zeros:", out)
+                return out
+        
+        mask_tokens = MaskTokens(self.aug_vocab_size)
+        
+        # def mask_non_tool_tokens(grad):
+        #     print("Gradient:", grad)
+        
+        with deepspeed.zero.GatheredParameters(self.model.embed_tokens.weight,
+                                               modifier_rank=0):
+            if self.augment_embeddings:
+                # print(f"Embedding weights shape: {self.model.embed_tokens.weight.shape}")
+                # print(f"Masking all but the last {self.aug_vocab_size} rows")
+                self.model.embed_tokens.weight.register_hook(mask_tokens.mask)
+            else:
+                # print(f"Embedding weights don't require grad. Skipping backwards hook for this parameter.")
+                self.model.embed_tokens.weight.register_hook(mask_tokens.full_mask)
         
         # LM Head
-        mask = torch.zeros_like(self.lm_head.weight)
-        mask[-self.aug_vocab_size:] = 1.
-        self.lm_head.weight.register_hook(lambda grad: grad*mask)
+        with deepspeed.zero.GatheredParameters(self.lm_head.weight,
+                                               modifier_rank=0):
+            # print(f"projection weights shape: {self.lm_head.weight.shape}")
+            # print(f"Masking all but the last {self.aug_vocab_size} rows")
+            # mask = torch.zeros_like(self.lm_head.weight)
+            # mask[-self.aug_vocab_size:] = 1.
+            self.lm_head.weight.register_hook(mask_tokens.mask)
     
-    def register_backward_hooks(self,):        
+    def register_backward_hooks(self):        
         if not self._hook_registred:
+            # print("Registering hoooks...")
             self._hook_registred = True
-            self._register_backward_hooks(self)
+            self._register_backward_hooks()
     
     def augmented_generation(self, case_idx, input_ids, template_len):
         generate = True

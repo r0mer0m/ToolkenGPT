@@ -12,3 +12,4 @@ api_names:
   - remainder
   - choose
   - permutate
+augment_embeddings: False

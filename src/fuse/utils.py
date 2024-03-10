@@ -1,7 +1,7 @@
 import torch
-from . import AugmentedLM, AugmentedConfig, AugmentedTokenizer
+from . import AugmentedLM, AugmentedConfig, AugmentedTokenizer, PLModel
                   
-def load(model_config, augmentation_config, rank: int, checkpoint_filepath: str = '') -> AugmentedLM:
+def load(model_config, rank: int, training_config=None, augmentation_config=None, checkpoint_filepath: str = '') -> AugmentedLM:
     
     if rank == 0: print("Loading tokenizer")
     tokenizer = AugmentedTokenizer.from_pretrained(
@@ -13,22 +13,23 @@ def load(model_config, augmentation_config, rank: int, checkpoint_filepath: str 
     if rank == 0: print("Loading config")
     augmented_model_config = AugmentedConfig.from_pretrained(
         model_config.base_model_id,
-        augment=True,
+        augment_embeddings=augmentation_config.augment_embeddings,
         aug_vocab_size = tokenizer.aug_vocab_size # tokenizer.n_aug_words,
     )
     
-    if rank == 0: print("Loading model")
-    model = AugmentedLM.from_pretrained(
-        model_config.base_model_id,
-        load_in_8bit=False,
-        torch_dtype=torch.bfloat16
-        )
-    
-    if rank == 0: print("Augmenting model")
-    model.augment(augmented_model_config)
-    
     if checkpoint_filepath:
         if rank == 0: print("Loading checkpoint")
-        model.load_state_dict(torch.load(checkpoint_filepath, map_location='cpu'))
+        model = model.load_state_dict(checkpoint_filepath)
     
-    return tokenizer, model
+    elif training_config:
+        if rank == 0: print("Loading model")
+        _model = AugmentedLM.from_pretrained(
+            model_config.base_model_id,
+            load_in_8bit=False,
+            torch_dtype=torch.bfloat16
+            )
+        if rank == 0: print("Augmenting model")
+        _model.augment(augmented_model_config)
+        model = PLModel(model=_model, tokenizer=tokenizer, rank=rank, config=training_config)
+    
+    return tokenizer, model, _model

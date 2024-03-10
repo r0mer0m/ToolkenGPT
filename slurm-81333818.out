@@ -1,0 +1,40 @@
+usage: conda [-h] [--no-plugins] [-V] COMMAND ...
+conda: error: argument COMMAND: invalid choice: 'activate' (choose from 'clean', 'compare', 'config', 'create', 'info', 'init', 'install', 'list', 'notices', 'package', 'remove', 'uninstall', 'rename', 'run', 'search', 'update', 'upgrade', 'build', 'content-trust', 'convert', 'debug', 'develop', 'doctor', 'index', 'inspect', 'metapackage', 'render', 'skeleton', 'repo', 'server', 'pack', 'verify', 'env', 'token')
+Traceback (most recent call last):
+  File "/panfs/jay/groups/1/karypisg/romer333/projects/LLM-tools/Toolken-miguel/augmented_llama_train.py", line 5, in <module>
+    import hydra
+ModuleNotFoundError: No module named 'hydra'
+[2024-03-09 20:56:28,214] torch.distributed.elastic.multiprocessing.api: [ERROR] failed (exitcode: 1) local_rank: 0 (pid: 483124) of binary: /home/karypisg/romer333/anaconda3/bin/python3
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/karypisg/romer333/anaconda3/lib/python3.11/site-packages/torch/distributed/run.py", line 816, in <module>
+    main()
+  File "/home/karypisg/romer333/anaconda3/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 347, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/karypisg/romer333/anaconda3/lib/python3.11/site-packages/torch/distributed/run.py", line 812, in main
+    run(args)
+  File "/home/karypisg/romer333/anaconda3/lib/python3.11/site-packages/torch/distributed/run.py", line 803, in run
+    elastic_launch(
+  File "/home/karypisg/romer333/anaconda3/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 135, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/karypisg/romer333/anaconda3/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 268, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+augmented_llama_train.py FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2024-03-09_20:56:28
+  host      : aga39.agate.msi.umn.edu
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 483124)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

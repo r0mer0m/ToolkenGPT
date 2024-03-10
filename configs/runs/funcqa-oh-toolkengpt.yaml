@@ -8,8 +8,8 @@ defaults:
 training:
   lr: 1e-4
   num_epochs: 8 # 10
-  # deepspeed_config: './configs/deepspeed/stage2.json'
   deepspeed_config: './configs/deepspeed/stage3_v2.json'
+  augment_embeddings: ${augmentation.augment_embeddings}
 
 out_checkpoint_dir: './checkpoints/${data.dataset_name}'
 best_checkpoint_filepath: './checkpoints/${data.dataset_name}/best_model.pt'
