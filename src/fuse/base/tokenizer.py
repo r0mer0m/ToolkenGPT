@@ -16,7 +16,26 @@ class AugmentedTokenizer(LlamaTokenizer):
         if augmentation_config and augmentation_config.api_names:
             
             self.base_vocab_size = self.vocab_size
-            ### control tokens
+            
+            # Option 1: no control tokens
+            # self.n_control_tokens = 0
+            
+            
+            ### Option 2: control tokens ['EOC', 'EOR']
+            control_tokens = ['EOC', 'EOR']
+            
+            # Add control tokens
+            self.api_control_tokens = [self.SYMBOL_SYNTHAX.format(api_name=control_token) for control_token in control_tokens]
+            self.n_control_tokens = self.add_tokens(self.api_control_tokens, special_tokens=True)
+            
+            (self.eoc_id,
+            self.eor_id) = self.convert_tokens_to_ids(self.api_control_tokens)
+            
+            assert self.n_control_tokens == len(self.api_control_tokens), "Your tokenizer contains one or more api_control_tokens by default. Please update the `SYMBOL_SYNTHAX` \
+                        variable in `AugmentedTokenizer` to make it unique"
+            
+            
+            ### Option 3: control tokens ['BOC', 'EOC', 'BOR', 'EOR']
             # control_tokens = ['BOC', 'EOC', 'BOR', 'EOR']
             
             # # Add control tokens
@@ -31,7 +50,7 @@ class AugmentedTokenizer(LlamaTokenizer):
             # assert self.n_control_tokens == len(self.api_control_tokens), "Your tokenizer contains one or more api_control_tokens by default. Please update the `SYMBOL_SYNTHAX` \
             #             variable in `AugmentedTokenizer` to make it unique"
             
-            self.n_control_tokens = 0
+            
             
             ####### Add api tokens
             self.api_names = augmentation_config.api_names

@@ -14,7 +14,11 @@ class PLDataModule(LightningDataModule):
         self.args = data_args
     
     def _get_dev_data(self, input_dir):
-        input_filepath = osp.join(input_dir, "train.json")
+        if self.args.augmented_data:
+            # input_filepath = osp.join(input_dir, "augmented_train.json")
+            input_filepath = osp.join(input_dir, "augmented_train_call_only.json")
+        else:
+            input_filepath = osp.join(input_dir, "train.json")
         if input_filepath.endswith(".json"):
             with open(input_filepath, "r") as f:
                 prompts = json.load(f)
@@ -43,8 +47,8 @@ class PLDataModule(LightningDataModule):
     def setup(self, stage=None):
         if stage == "fit":
             train_data, val_data = self._get_dev_data(self.args.input_dir)
-            self.train_dataset = AugLMDataset(train_data, self.tokenizer)
-            self.val_dataset = AugLMDataset(val_data, self.tokenizer)
+            self.train_dataset = AugLMDataset(train_data, self.tokenizer, self.args)
+            self.val_dataset = AugLMDataset(val_data, self.tokenizer, self.args)
             if self.rank == 0: 
                 print(f"Total data:\n\tTraining: {len(train_data)}\n\tTesting: {len(val_data)}")
         elif stage == "test":

@@ -1,0 +1,18 @@
+run_name: emb-exp-funcqa-aug
+
+defaults:
+  - model: llama2
+  - augmentation: funcqa_specific
+  - data: funcqa_oh
+
+training:
+  lr: 1e-4
+  num_epochs: 8 # 10
+  deepspeed_config: './configs/deepspeed/stage3_v2.json'
+  embedding_augmentation_type: ${augmentation.embedding_augmentation_type}
+
+out_checkpoint_dir: './checkpoints/${data.dataset_name}'
+best_checkpoint_filepath: './checkpoints/${data.dataset_name}/best_model.pt'
+
+# independent variable
+augmentation.embedding_augmentation_type: "augmented-only"

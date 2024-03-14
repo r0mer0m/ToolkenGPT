@@ -17,7 +17,7 @@ from pytorch_lightning.strategies import DeepSpeedStrategy
 from torch.distributed.elastic.multiprocessing.errors import record
 from pytorch_lightning.utilities.deepspeed import convert_zero_checkpoint_to_fp32_state_dict
 
-def setup():
+def dist_setup():
     # initialize the process group
     dist.init_process_group("nccl")
 
@@ -36,7 +36,7 @@ def main(config):
     random.seed(1)
     np.random.seed(1)
     
-    setup()
+    dist_setup()
     
     local_rank = int(os.environ['LOCAL_RANK'])
     rank = int(os.environ['RANK'])

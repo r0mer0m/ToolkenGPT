@@ -174,3 +174,8 @@ CUDA_VISIBLE_DEVICES=0,1 python3 -m torch.distributed.run --nproc_per_node 2 --m
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 python3 -m torch.distributed.run --nproc_per_node 2 --master_port 1200 augmented_llama_train.py --config-name funcqa-oh-toolkengpt run_name=test-funcqa >> logs.txt
 ```
+
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python3 -m torch.distributed.run --nproc_per_node 1 --master_port 1200 augmented_llama_train.py --config-name funcqa-oh-toolkengpt run_name=funcqa
+```

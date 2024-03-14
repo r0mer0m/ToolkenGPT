@@ -19,6 +19,22 @@ def sample_top_p(probs, p):
     return next_token
 
 
+class HookMaskGrad(object):
+    def __init__(self, aug_vocab_size):
+        self.aug_vocab_size = aug_vocab_size
+    
+    def base_mask(self, grad):
+        mask = torch.zeros_like(grad)
+        mask[-self.aug_vocab_size:] = 1.
+        out = grad*mask
+        return out
+        
+    def full_mask(self, grad):
+        mask = torch.zeros_like(grad)
+        out = grad*mask
+        return out
+
+
 class AugmentedLM(LlamaForCausalLM):
     
     def __init__(self, *args, **kwargs):
@@ -31,11 +47,6 @@ class AugmentedLM(LlamaForCausalLM):
         
         # deepspeed.zero.register_external_parameter(self, self.model.embed_tokens.weight)
         # deepspeed.zero.register_external_parameter(self, self.lm_head.weight)
-    
-    def freeze_base(self,):
-        for param in self.parameters(): param.requires_grad = False
-        # self.model.embed_tokens.weight.requires_grad = True
-        # self.lm_head.weight.requires_grad = True
     
     def augment_embeddings(self, config):
         """
@@ -101,9 +112,8 @@ class AugmentedLM(LlamaForCausalLM):
         self.lm_head.weight.requires_grad = True
         
     def augment(self, config):
-        # self.freeze_base()
-        self.augment_embeddings = config.augment_embeddings
-        if config.augment_embeddings:
+        self.embedding_augmentation_type = config.embedding_augmentation_type
+        if self.embedding_augmentation_type != "none":
             self.augment_embeddings(config)
         self.augment_projection(config)
         
@@ -113,46 +123,34 @@ class AugmentedLM(LlamaForCausalLM):
             
     def _register_backward_hooks(self, ):
         # Embeddings
-        class MaskTokens(object):
-            def __init__(self, aug_vocab_size):
-                self.aug_vocab_size = aug_vocab_size
-            
-            def mask(self, grad):
-                mask = torch.zeros_like(grad)
-                mask[-self.aug_vocab_size:] = 1.
-                out = grad*mask
-                # print("Gradient:", out)
-                return out
-                
-            def full_mask(self, grad):
-                mask = torch.zeros_like(grad)
-                out = grad*mask
-                # print("This grad should be all zeros:", out)
-                return out
         
-        mask_tokens = MaskTokens(self.aug_vocab_size)
+        mask_tokens = HookMaskGrad(self.aug_vocab_size)
         
         # def mask_non_tool_tokens(grad):
         #     print("Gradient:", grad)
         
         with deepspeed.zero.GatheredParameters(self.model.embed_tokens.weight,
                                                modifier_rank=0):
-            if self.augment_embeddings:
-                # print(f"Embedding weights shape: {self.model.embed_tokens.weight.shape}")
+            if self.embedding_augmentation_type == "augmented-only":
+                print(f"Updating only the augmented embeddings")
                 # print(f"Masking all but the last {self.aug_vocab_size} rows")
-                self.model.embed_tokens.weight.register_hook(mask_tokens.mask)
-            else:
+                self.model.embed_tokens.weight.register_hook(mask_tokens.base_mask)
+            
+            elif self.embedding_augmentation_type == "none":
+                print(f"Freezing embeddings (via masking)")
                 # print(f"Embedding weights don't require grad. Skipping backwards hook for this parameter.")
                 self.model.embed_tokens.weight.register_hook(mask_tokens.full_mask)
+            
+            elif self.embedding_augmentation_type == "all":
+                print(f"Updating all embeddings")
+            
+            else:
+                raise ValueError(f"Unknown embedding_augmentation_type: {self.embedding_augmentation_type}. Please use one of ['none', 'augmented-only', 'all']")
         
         # LM Head
         with deepspeed.zero.GatheredParameters(self.lm_head.weight,
                                                modifier_rank=0):
-            # print(f"projection weights shape: {self.lm_head.weight.shape}")
-            # print(f"Masking all but the last {self.aug_vocab_size} rows")
-            # mask = torch.zeros_like(self.lm_head.weight)
-            # mask[-self.aug_vocab_size:] = 1.
-            self.lm_head.weight.register_hook(mask_tokens.mask)
+            self.lm_head.weight.register_hook(mask_tokens.base_mask)
     
     def register_backward_hooks(self):        
         if not self._hook_registred:
@@ -206,3 +204,18 @@ class AugmentedLM(LlamaForCausalLM):
                 "status": str(e)
             }
         return log
+    
+    def generate_call(self, input_ids, start_token_idxs, end_token_idxs):
+        for s, e in zip(start_token_idxs[:1], end_token_idxs[:1]):
+            sample_input_ids = input_ids[:, :s]
+            # print("Input ids: ", sample_input_ids)
+            output = self.generate(
+                sample_input_ids,
+                max_length = e,
+                temperature = 1,
+                top_p = 5,
+                
+            )
+            # print("Output: ", output[0])
+            # sample_input_ids = torch.cat((sample_input_ids, output[0, -1:]), dim=0)
+        return input_ids[0,:e+1], output[0]

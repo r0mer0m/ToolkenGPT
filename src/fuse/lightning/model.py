@@ -45,9 +45,6 @@ class PLModel(LightningModule):
     
     def _forward(self, batch):
         
-        # print(f'Input ids: {batch["input_ids"]}')
-        # print(f'Target ids: {batch["target_ids"]}')
-        
         input_ids = batch['input_ids'].to("cuda")
         target_ids = batch['target_ids'].to("cuda")
         
@@ -69,7 +66,6 @@ class PLModel(LightningModule):
     def on_validation_epoch_start(self) -> None:
         self.validation_step_outputs = []
         self.results = defaultdict(list)
-        # return super().on_validation_epoch_start()
     
     def validation_step(self, batch, batch_idx):
         if not isinstance(batch, dict):
@@ -142,8 +138,6 @@ class PLModel(LightningModule):
         '''
         Metrics recording and computation
         '''
-        # return super().on_train_batch_end(outputs, batch, batch_idx)
-        # if self.rank == 0:
         self._record_trigger_metric_objects(outputs['logits'], batch['target_ids'])
         if (batch_idx + 1) % 20 == 0:
             self._log_trigger_metrics(stage="train", log_each=False)
@@ -153,7 +147,6 @@ class PLModel(LightningModule):
         '''
         Metrics recording and computation
         '''
-        # if self.rank == 0:
         self.results = defaultdict(list)
         for validation_step_output in self.validation_step_outputs:
             self._record_trigger_metric_objects(
@@ -162,9 +155,6 @@ class PLModel(LightningModule):
                 )
         self._log_trigger_metrics(stage="test", log_each=False)      
         self.results = defaultdict(list)   
-    
-    # def on_save_checkpoint(self, checkpoint: Dict[str, Union[str, int]]) -> None:
-    #     print(f"Saving model to {checkpoint['filepath']}")
         
     def configure_optimizers(self):
         return torch.optim.AdamW([p for p in self.model.parameters() if p.requires_grad], lr=self.config.lr)
