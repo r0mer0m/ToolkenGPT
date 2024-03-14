@@ -4,10 +4,11 @@ from torch.utils.data import Dataset
 
 class AugLMDataset(Dataset):
     
-    def __init__(self, records, tokenizer):
+    def __init__(self, records, tokenizer, data_args=None):
         self.records = records
         self.tokenizer = tokenizer
         self.ignore_index = -100
+        self.augmented_data = data_args.augmented_data if data_args else False
         
     def __len__(self,):
         return len(self.records)
@@ -21,35 +22,47 @@ class AugLMDataset(Dataset):
     
     def __getitem__(self, i):
         text = self.records[i]['text']
-        
-        input_ids = torch.tensor(self.tokenizer.encode(text))[:] # bos=True, eos=True
-        target_ids = input_ids.clone()
-        
-        for s, t, eq in zip(self.records[i]["start_token_idx"], self.records[i]["end_token_idx"], self.records[i]["tar_eq"]):
-            # for different data formats
-            if "[" in eq:
-                op = re.search(r"(\[.*?\])", eq).group(1)
-            elif "<" in eq:
-                op = re.search(r"(<.*?>)", eq).group(1)
-                # print(op)
+        if self.augmented_data:
+            input_ids = torch.tensor(self.tokenizer.encode(text))[:] # bos=True, eos=True
+            target_ids = input_ids.clone()
+            
+            idxs = torch.ones_like(target_ids, dtype=torch.long)
+            for s, t in zip(self.records[i]["start_token_idx"], self.records[i]["end_token_idx"]):
+                idxs[s:t] = 0
+            
+            target_ids[idxs] = -100
+            
+        else:
+            input_ids = torch.tensor(self.tokenizer.encode(text))[:] # bos=True, eos=True
+            target_ids = input_ids.clone()
+            
+            for s, t, eq in zip(self.records[i]["start_token_idx"], self.records[i]["end_token_idx"], self.records[i]["tar_eq"]):
+                # for different data formats
+                if "[" in eq:
+                    op = re.search(r"(\[.*?\])", eq).group(1)
+                elif "<" in eq:
+                    op = re.search(r"(<.*?>)", eq).group(1)
+                    # print(op)
 
-            if op not in self.tokenizer.api_symbols:
-                # op = op[1:-1]
-                op = '<<' + op + '>>'
-                            
-            target_ids[s] = self.tokenizer.symbol_to_id[op]
-            target_ids[s+1: t] = -100
-        
+                if op not in self.tokenizer.api_symbols:
+                    # op = op[1:-1]
+                    op = '<<' + op + '>>'
+                                
+                target_ids[s] = self.tokenizer.symbol_to_id[op]
+                target_ids[s+1: t] = -100
+            
         input_ids = input_ids[:-1]
         target_ids = target_ids[1:]
-        
+            
         # print(f'{text=}')
         # print(f'{input_ids=}')
         # print(f'{target_ids=}')
         
         record = {
             "input_ids": input_ids,
-            "target_ids": target_ids
+            "target_ids": target_ids,
+            "start_token_idxs": self.records[i]["start_token_idx"],
+            "end_token_idxs": self.records[i]["end_token_idx"],
         }
         '''
         text = self.records[i]['text']
