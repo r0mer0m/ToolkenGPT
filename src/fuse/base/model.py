@@ -126,9 +126,6 @@ class AugmentedLM(LlamaForCausalLM):
         
         mask_tokens = HookMaskGrad(self.aug_vocab_size)
         
-        # def mask_non_tool_tokens(grad):
-        #     print("Gradient:", grad)
-        
         with deepspeed.zero.GatheredParameters(self.model.embed_tokens.weight,
                                                modifier_rank=0):
             if self.embedding_augmentation_type == "augmented-only":
@@ -219,3 +216,16 @@ class AugmentedLM(LlamaForCausalLM):
             # print("Output: ", output[0])
             # sample_input_ids = torch.cat((sample_input_ids, output[0, -1:]), dim=0)
         return input_ids[0,:e+1], output[0]
+    
+    def generate_answer(self, input_ids, max_new_tokens=100):
+        # print("Input ids: ", sample_input_ids)
+        output = self.generate(
+            input_ids,
+            max_new_tokens = max_new_tokens,
+            temperature = 1,
+            top_p = 5,
+            
+        )
+        # print("Output: ", output[0])
+        # sample_input_ids = torch.cat((sample_input_ids, output[0, -1:]), dim=0)
+        return output[0] # expected input-output, input - predicted-output

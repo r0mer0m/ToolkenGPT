@@ -41,6 +41,16 @@ def main(args):
             left_side = tokenized_text[:s]
             right_side = tokenized_text[e:]
             
+            # get start of question idx
+            idx = left_side[3:].index(29901)
+            if left_side[3:][idx-1] == 319 or left_side[3:][idx-1] == 29909:
+                out_record['answer_start_idx'] = idx + 1 + 3
+                print('\n\n')
+                print(tokenizer.convert_ids_to_tokens(left_side[out_record['answer_start_idx']-2:out_record['answer_start_idx']+2]))
+            else:
+                raise ValueError(f"Not found in {text}")
+            
+            
             if ends_with_equal(tokenizer, left_side):
                 print("Moving equal sign")
                 left_side_text = tokenizer.decode(left_side[1:])
@@ -73,7 +83,8 @@ def main(args):
         out_data.append(out_record)
         # print("\nTransformed record: ", out_record['text'])
 
-    with open('../data/funcqa/augmented_train_call_only_equal_after_call.json', 'w') as fp:
+    # with open('../data/funcqa/augmented_train_call_only_equal_after_call.json', 'w') as fp:
+    with open('../data/funcqa/augmented_train_call_only_equal_after_call_w_ans_start_idx.json', 'w') as fp:
         json.dump(out_data, fp)
 
 if __name__ == "__main__":

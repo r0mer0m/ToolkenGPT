@@ -60,7 +60,7 @@ def main(config):
         every_n_epochs=1,
         save_on_train_epoch_end=False,
         # save_on_train_epoch_end=True,
-        save_top_k=-1,
+        save_top_k=2,
         # monitor="loss",
         monitor="val_loss",
         mode="min",

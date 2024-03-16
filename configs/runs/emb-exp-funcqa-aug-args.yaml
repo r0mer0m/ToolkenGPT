@@ -11,8 +11,8 @@ training:
   deepspeed_config: './configs/deepspeed/stage3_v2.json'
   embedding_augmentation_type: ${augmentation.embedding_augmentation_type}
 
-out_checkpoint_dir: './checkpoints/${data.dataset_name}'
-best_checkpoint_filepath: './checkpoints/${data.dataset_name}/best_model.pt'
+out_checkpoint_dir: './checkpoints/${run_name}/${data.dataset_name}'
+best_checkpoint_filepath: '${out_checkpoint_dir}/best_model.pt'
 
 # independent variable
 augmentation.embedding_augmentation_type: "augmented-only"

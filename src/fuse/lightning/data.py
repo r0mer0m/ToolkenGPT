@@ -17,7 +17,8 @@ class PLDataModule(LightningDataModule):
         if self.args.augmented_data:
             # input_filepath = osp.join(input_dir, "augmented_train.json")
             # input_filepath = osp.join(input_dir, "augmented_train_call_only.json") # loss with call only
-            input_filepath = osp.join(input_dir, "augmented_train_call_only_equal_after_call.json")
+            # input_filepath = osp.join(input_dir, "augmented_train_call_only_equal_after_call.json")
+            input_filepath = osp.join(input_dir, "augmented_train_call_only_equal_after_call_w_ans_start_idx.json")
         else:
             input_filepath = osp.join(input_dir, "train.json")
         if input_filepath.endswith(".json"):

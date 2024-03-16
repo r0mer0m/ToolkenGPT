@@ -63,6 +63,7 @@ class AugLMDataset(Dataset):
             "target_ids": target_ids,
             "start_token_idxs": self.records[i]["start_token_idx"],
             "end_token_idxs": self.records[i]["end_token_idx"],
+            "answer_start_idx": self.records[i]["answer_start_idx"]
         }
         '''
         text = self.records[i]['text']
