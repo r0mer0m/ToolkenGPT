@@ -35,21 +35,22 @@ def main(args):
             'start_token_idx': [],
             'end_token_idx': []
         }
+        
+        # get start of question idx
+        idx = tokenized_text[3:].index(29901) # search for first token of answer
+        if tokenized_text[3:][idx-1] == 319 or tokenized_text[3:][idx-1] == 29909:
+            print('\n\n')
+            print(tokenizer.convert_ids_to_tokens(tokenized_text[answer_start_idx-2:answer_start_idx+2]))
+            answer_start_idx = idx + 1 + 3
+            out_record['answer_start_idx'] = answer_start_idx
+        else:
+            raise Exception(f"Beginning of answer not found in {text}")
+        
         for s, e, eq in zip(record['start_token_idx'], record['end_token_idx'], record['tar_eq']):
             # print(s, e)
             s, e = s + cum_offset, e + cum_offset
             left_side = tokenized_text[:s]
             right_side = tokenized_text[e:]
-            
-            # get start of question idx
-            idx = left_side[3:].index(29901)
-            if left_side[3:][idx-1] == 319 or left_side[3:][idx-1] == 29909:
-                out_record['answer_start_idx'] = idx + 1 + 3
-                print('\n\n')
-                print(tokenizer.convert_ids_to_tokens(left_side[out_record['answer_start_idx']-2:out_record['answer_start_idx']+2]))
-            else:
-                raise ValueError(f"Not found in {text}")
-            
             
             if ends_with_equal(tokenizer, left_side):
                 print("Moving equal sign")
