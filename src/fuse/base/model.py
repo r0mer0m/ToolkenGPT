@@ -7,6 +7,7 @@ from fuse.funchub.math import *
 from transformers import LlamaForCausalLM
 from transformers import LogitsProcessorList, LogitsProcessor
 
+
 class WeightAugmentedLogits(LogitsProcessorList):
     def __init__(self, aug_vocab_size, bias, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -16,6 +17,7 @@ class WeightAugmentedLogits(LogitsProcessorList):
     def __call__(self, input_ids, scores, **kwargs):
         scores[:, :-self.aug_vocab_size] += self.bias
         return scores
+
 
 def sample_top_p(probs, p):
     probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
@@ -58,6 +60,46 @@ class AugmentedLM(LlamaForCausalLM):
         # deepspeed.zero.register_external_parameter(self, self.model.embed_tokens.weight)
         # deepspeed.zero.register_external_parameter(self, self.lm_head.weight)
     
+    @staticmethod
+    def _initialize_weights(aug_weight, base_weights, tokenizer, config, base_size):
+        if config.initialization == 'random':
+            stdv = 1. / math.sqrt(aug_weight.size(1)) # linear layer intialization
+            aug_weight[:tokenizer.n_control_tokens].uniform_(-stdv, stdv)
+        
+        elif config.initialization == 'semantic':
+            for id, api_name in tokenizer.id_to_api.items(): # replace with all tokens
+                api_definition = tokenizer.augmentation_config.api_definitions[api_name]
+                
+                # Step 1: Tokenize and remove leading <s> token 
+                definition_ids = tokenizer.encode(api_definition, return_tensors='pt')[0, 1:]
+                
+                # definition_ids = definition_ids[1:]#[0, 1:]#['input_ids']
+                # print('definition_ids: ', definition_ids)
+                # print('definition_tokens: ', tokenizer.convert_ids_to_tokens(definition_ids))
+                # print('definition_ids shape: ', definition_ids.shape)
+                # definition_ids = tokenizer.encode(api_definition, return_tensors='pt')['input_ids'][1:]
+                
+                # Step 2: Get weighted or single token representation
+                if definition_ids.shape[0] > 1:
+                    initialized_weight = base_weights[definition_ids]
+                    # print("Using average of ", initialized_weight.shape, " over dim 0")
+                    initialized_weight = initialized_weight.mean(dim=0)
+                else:
+                    initialized_weight = base_weights[definition_ids[0]]
+                    # print("Using single description token: ", initialized_weight.shape)
+                    
+                # print("initialized_weight has shape: ", initialized_weight.shape)
+                # print("aug_id: ", aug_id, ", id: ", id, ", base_size: ", base_size)
+                # print("aug_weight[aug_id]: ", aug_weight[aug_id].shape)
+                
+                # Step 3: Update initilization
+                aug_id = id - base_size
+                aug_weight[aug_id] = initialized_weight
+        
+        else:
+            raise ValueError(f"{config.initialization=} not supported. Supported options: `['random','semantic']` ")
+    
+    
     def augment_embeddings(self, tokenizer, config):
         """
         Augment base LLM, to be run after the model is initialized & loaded from base
@@ -79,8 +121,11 @@ class AugmentedLM(LlamaForCausalLM):
         #     stride=1,
         #     return_master_weight=False,
         # )
-        stdv = 1. / math.sqrt(aug_weight.size(1)) # linear layer intialization
-        aug_weight.uniform_(-stdv, stdv)
+        # stdv = 1. / math.sqrt(aug_weight.size(1)) # linear layer intialization
+        # aug_weight.uniform_(-stdv, stdv)
+        
+        aug_weight = self._initialize_weights(aug_weight, base_weights, tokenizer, config, base_size)
+        
         # for id, api_name in tokenizer.id_to_api.items():
         #     api_definition = tokenizer.augmentation_config.api_definitions[api_name]
         #     definition_ids = tokenizer.encode(api_definition, return_tensors='pt')[0, 1:]#['input_ids']
@@ -119,33 +164,9 @@ class AugmentedLM(LlamaForCausalLM):
         #     stride=1,
         #     return_master_weight=False,
         # )
-        # initialize control tokens. TODO: test semantic initialization?
-        stdv = 1. / math.sqrt(aug_weight.size(1)) # linear layer intialization
-        aug_weight[:tokenizer.n_control_tokens].uniform_(-stdv, stdv)
         
-        for id, api_name in tokenizer.id_to_api.items():
-            api_definition = tokenizer.augmentation_config.api_definitions[api_name]
-            # `1:` remove leading <s> token 
-            definition_ids = tokenizer.encode(api_definition, return_tensors='pt')[0, 1:]
-            # definition_ids = definition_ids[1:]#[0, 1:]#['input_ids']
-            # print('definition_ids: ', definition_ids)
-            # print('definition_tokens: ', tokenizer.convert_ids_to_tokens(definition_ids))
-            # print('definition_ids shape: ', definition_ids.shape)
-            # definition_ids = tokenizer.encode(api_definition, return_tensors='pt')['input_ids'][1:]
-            if definition_ids.shape[0] > 1:
-                initialized_weight = base_weights[definition_ids]
-                # print("Using average of ", initialized_weight.shape, " over dim 0")
-                initialized_weight = initialized_weight.mean(dim=0)
-            else:
-                initialized_weight = base_weights[definition_ids[0]]
-                # print("Using single description token: ", initialized_weight.shape)
-                
-            # print("initialized_weight has shape: ", initialized_weight.shape)
-            aug_id = id - base_size
-            # print("aug_id: ", aug_id, ", id: ", id, ", base_size: ", base_size)
-            # print("aug_weight[aug_id]: ", aug_weight[aug_id].shape)
-            aug_weight[aug_id] = initialized_weight
-        # exit()
+        aug_weight = self._initialize_weights(aug_weight, base_weights, tokenizer, config, base_size)
+        
         # Expand embedding layer
         self.lm_head.weight = nn.Parameter(
             torch.cat((base_weights.data, aug_weight), dim=0)
