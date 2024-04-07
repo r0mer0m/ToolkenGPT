@@ -22,14 +22,11 @@ def read(*paths, **kwargs):
         content = open_file.read().strip()
     return content
 
-
-def read_requirements(path):
-    return [
-        line.strip()
-        for line in read(path).split("\n")
-        if not line.startswith(('"', "#", "-", "git+"))
-    ]
-
+requirements = [
+    "pathlib2",
+    "wandb",
+    "hydra-core"
+]
 
 setup(
     name=PACKAGE_NAME,
@@ -40,7 +37,7 @@ setup(
     long_description_content_type="text/markdown",
     packages=find_packages(include=[SOURCE_DIRECTORY], exclude=["tests", ".github"]),
     package_dir={"": SOURCE_DIRECTORY},
-    install_requires=read_requirements("requirements.txt"),
+    install_requires=requirements,
     # entry_points={
     #     "console_scripts": ["project_name = project_name.__main__:main"]
     # },

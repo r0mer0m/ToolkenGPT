@@ -7,7 +7,7 @@ defaults:
 
 training:
   lr: 1e-4
-  num_epochs: 8 # 10
+  num_epochs: 1 # 10
   deepspeed_config: './configs/deepspeed/stage3_v2.json'
   embedding_augmentation_type: ${augmentation.embedding_augmentation_type}
 
@@ -16,3 +16,4 @@ best_checkpoint_filepath: '${out_checkpoint_dir}/best_model.pt'
 
 # independent variable
 augmentation.embedding_augmentation_type: "augmented-only"
+augmentation.aug_token_bias: 0.0

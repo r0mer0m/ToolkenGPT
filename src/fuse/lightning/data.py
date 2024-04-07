@@ -14,13 +14,23 @@ class PLDataModule(LightningDataModule):
         self.args = data_args
     
     def _get_dev_data(self, input_dir):
+        # template_path = osp.join(input_dir, "template_oh", "llama_general.txt")
+        # template_path = osp.join(input_dir, "template_oh", "llama_func.txt")
+        template_path = osp.join(input_dir, "funcqa_oh", "template.txt")
+        with open(template_path) as f:
+            template = f.read()
+        
         if self.args.augmented_data:
             # input_filepath = osp.join(input_dir, "augmented_train.json")
             # input_filepath = osp.join(input_dir, "augmented_train_call_only.json") # loss with call only
             # input_filepath = osp.join(input_dir, "augmented_train_call_only_equal_after_call.json")
-            input_filepath = osp.join(input_dir, "augmented_train_call_only_equal_after_call_w_ans_start_idx.json")
+            # input_filepath = osp.join(input_dir, "augmented_train_call_only_equal_after_call_w_ans_start_idx.json")
+            input_filepath = osp.join(input_dir, "train.json")
         else:
             input_filepath = osp.join(input_dir, "train.json")
+        
+        print("Loading data from: ", input_filepath)
+        
         if input_filepath.endswith(".json"):
             with open(input_filepath, "r") as f:
                 prompts = json.load(f)
@@ -32,31 +42,33 @@ class PLDataModule(LightningDataModule):
         train_data = prompts[:-self.args.test_len]
         test_data = prompts[-self.args.test_len:]
         
-        return train_data, test_data
+        return train_data, test_data, template
     
-    def _get_test_data(self, input_dir):
-        template_path = osp.join(input_dir, "template.txt")
-        with open(template_path) as f:
-            template = f.read()
+    # def _get_test_data(self, input_dir):
+    #     template_path = osp.join(input_dir, "template.txt")
+    #     with open(template_path) as f:
+    #         template = f.read()
         
-        test_path = osp.join(input_dir, "test.json")
-        with open(test_path) as f:
-            data = f.read()
-        samples = [r['question'] for r in data]
+    #     test_path = osp.join(input_dir, "test.json")
+    #     with open(test_path) as f:
+    #         data = f.read()
+    #     samples = [r['question'] for r in data]
         
-        return template, samples
+    #     return template, samples
     
     def setup(self, stage=None):
         if stage == "fit":
-            train_data, val_data = self._get_dev_data(self.args.input_dir)
-            self.train_dataset = AugLMDataset(train_data, self.tokenizer, self.args)
-            self.val_dataset = AugLMDataset(val_data, self.tokenizer, self.args)
+            train_data, val_data, template = self._get_dev_data(self.args.input_dir)
+            # if not self.args. : template = ""
+            self.train_dataset = AugLMDataset(train_data, self.tokenizer, self.args, template=template)
+            self.val_dataset = AugLMDataset(val_data, self.tokenizer, self.args, template=template)
             if self.rank == 0: 
                 print(f"Total data:\n\tTraining: {len(train_data)}\n\tTesting: {len(val_data)}")
         elif stage == "test":
-            template, test_data = self._get_test_data(self.args.input_dir)
-            self.test_dataset = TestAugLMDataset(test_data, self.tokenizer, template)
-            print(f"Total data:\n\tTest: {len(test_data)}")
+            _, val_data, template = self._get_dev_data(self.args.input_dir)
+            # template, test_data = self._get_test_data(self.args.input_dir)
+            self.test_dataset = TestAugLMDataset(val_data, self.tokenizer, self.args, template)
+            print(f"Total data:\n\tTest: {len(self.test_dataset)}")
             
     def train_dataloader(self):
         sampler = DistributedSampler(self.train_dataset, shuffle=True)

@@ -12,4 +12,19 @@ api_names:
   - remainder
   - choose
   - permutate
+api_definitions:
+  add: "add"
+  subtract: "subtract"
+  multiply: "multiply"
+  divide: "divide"
+  power: "power"
+  sqrt: "square root"
+  log: "logarithm"
+  ln: "natural logarithm"
+  lcm: "least common multiple"
+  gcd: "greatest common divisor"
+  remainder: "remainder"
+  choose: "choose"
+  permutate: "permute"
 embedding_augmentation_type: "augmented-only"
+aug_token_bias: 0.0

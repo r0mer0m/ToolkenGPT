@@ -51,7 +51,9 @@ class PLModel(LightningModule):
         logits = self.model(input_ids).logits
         
         loss = self.loss_fun(logits.view(-1, logits.shape[-1]), target_ids.view(-1))
-        
+        # print("Loss: ", loss.item())
+        # print("logits: ", logits.view(-1, logits.shape[-1])[:, -15:])
+        # print("target_ids: ", target_ids.view(-1))
         return loss, logits
     
     def training_step(self, batch, batch_idx):

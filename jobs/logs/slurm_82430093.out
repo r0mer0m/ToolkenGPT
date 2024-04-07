@@ -1,0 +1,200 @@
+[2024-04-06 21:47:30,260] [INFO] [real_accelerator.py:191:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+/home/karypisg/romer333/anaconda3/envs/augmented-llm/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'funcqa-oh': Defaults list is missing `_self_`. See https://hydra.cc/docs/1.2/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Loading tokenizer
+The tokenizer class you load from this checkpoint is not the same type as the class this function is called from. It may result in unexpected tokenization. 
+The tokenizer class you load from this checkpoint is 'LlamaTokenizer'. 
+The class this function is called from is 'AugmentedTokenizer'.
+Loading config
+Loading model
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:04<00:04,  4.55s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:06<00:00,  2.85s/it]Loading checkpoint shards: 100%|██████████| 2/2 [00:06<00:00,  3.11s/it]
+model:
+  base_model_id: meta-llama/Llama-2-7b-chat-hf
+augmentation:
+  api_names:
+  - add
+  - subtract
+  - multiply
+  - divide
+  - power
+  - sqrt
+  - log
+  - ln
+  - lcm
+  - gcd
+  - remainder
+  - choose
+  - permutate
+  api_definitions:
+    add: add
+    subtract: subtract
+    multiply: multiply
+    divide: divide
+    power: power
+    sqrt: square root
+    log: logarithm
+    ln: natural logarithm
+    lcm: least common multiple
+    gcd: greatest common divisor
+    remainder: remainder
+    choose: choose
+    permutate: permute
+  embedding_augmentation_type: augmented-only
+  aug_token_bias: 0.0
+data:
+  dataset_name: funcqa
+  input_dir: ../augmented_data/funcqa/
+  test_len: 39
+  max_gen_len: 512
+  batch_size: 1
+  num_workers: 1
+  pin_memory: true
+  augmented_data: true
+  use_template: false
+run_name: None
+training:
+  lr: 0.0001
+  num_epochs: 8
+  deepspeed_config: ./configs/deepspeed/stage3_v2.json
+out_checkpoint_dir: ./checkpoints/${data.dataset_name}
+best_checkpoint_filepath: ./checkpoints/${data.dataset_name}/best_model.pt
+
+tokenizer.aug_vocab_size=15
+tokenizer.vocab_size=32000
+tokenizer.id_to_api={32002: 'add', 32003: 'subtract', 32004: 'multiply', 32005: 'divide', 32006: 'power', 32007: 'sqrt', 32008: 'log', 32009: 'ln', 32010: 'lcm', 32011: 'gcd', 32012: 'remainder', 32013: 'choose', 32014: 'permutate'}
+/home/karypisg/romer333/anaconda3/envs/augmented-llm/lib/python3.10/site-packages/lightning_fabric/connector.py:558: `precision=16` is supported for historical reasons but its usage is discouraged. Please set your precision to 16-mixed instead!
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+initializing deepspeed distributed: GLOBAL_RANK: 0, MEMBER: 1/1
+[2024-04-06 21:47:38,865] [WARNING] [deepspeed.py:651:_auto_select_batch_size] Tried to infer the batch size for internal deepspeed logging from the `train_dataloader()`. To ensure DeepSpeed logging remains correct, please manually pass the strategy with the batch size, `Trainer(strategy=DeepSpeedStrategy(logging_batch_size_per_gpu=batch_size))`.
+wandb: Currently logged in as: romer333 (gk-lab). Use `wandb login --relogin` to force relogin
+wandb: wandb version 0.16.6 is available!  To upgrade, please run:
+wandb:  $ pip install wandb --upgrade
+wandb: Tracking run with wandb version 0.16.3
+wandb: Run data is saved locally in ./wandb/run-20240406_214741-52g5zhan
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run None
+wandb: ⭐️ View project at https://wandb.ai/gk-lab/tool-augmentation-tests-funcqa
+wandb: 🚀 View run at https://wandb.ai/gk-lab/tool-augmentation-tests-funcqa/runs/52g5zhan
+Loading data from:  ../augmented_data/funcqa/train.json
+Template:  Answer the following question with <<<add>>>, <<<subtract>>>, <<<multiply>>>, <<<divide>>>, <<<power>>>, <<<sqrt>>>, <<<log>>>, <<<lcm>>>, <<<gcd>>>, <<<ln>>>, <<<choose>>>, <<<remainder>>>, <<<permutate>>>:
+
+Q: If Amy's income increases by 4% annually, how many times will it multiply in 11 years?
+A: In 11 years, Amy's income will increase by 1.04^11 = <<<power>>>(1.04,11)<<<EOC>>>1.54<<<EOR>>> times. So, the answer is 1.54.
+
+Q: If a store sells 147 bananas today and 354 more bananas tomorrow, how many bananas does the store sell in total?
+A: The store sells 147 bananas today and 354 more bananas tomorrow, so the total number of bananas sold is 147+354=<<<add>>>(147,354)<<<EOC>>>501<<<EOR>>>. So, the answer is 501.
+
+Q: A man had 789.4 dollars in his wallet. He spent 11.99 dollars on a movie ticket. How much money does he have left now?
+A: The man had 789.4 dollars in his wallet and spent 11.99 dollars on a movie ticket, so he has 789.4-11.99=<<<subtract>>>(789.4,11.99)<<<EOC>>>777.41<<<EOR>>> dollars left. So, the answer is 777.41.
+
+Q: If a cake weighs 3.77 pounds and is divided into 13 equal pieces, how much does each piece weight?
+A: Each piece of the cake weighs 3.77/13=<<<divide>>>(3.77,13)<<<EOC>>>0.29<<<EOR>>> pounds. So, the answer is 0.29.
+
+
+Template offset:  448
+{'calls': ['<<<remainder>>>(5572,3241)<<<EOC>>>2331<<<EOR>>>'], 'func_name_ids': [32012], 'eoc_offsets': [13], 'text': 'Q: An apple orchard has 5572 apples and they want to pack them in boxes containing 3241 apples each. How many apples will be left unpacked?\nA: The number of apples left unpacked will be 5572 mod 3241=<<<remainder>>>(5572,3241)<<<EOC>>>2331<<<EOR>>>.', 'token_len': 88}
+Template:  Answer the following question with <<<add>>>, <<<subtract>>>, <<<multiply>>>, <<<divide>>>, <<<power>>>, <<<sqrt>>>, <<<log>>>, <<<lcm>>>, <<<gcd>>>, <<<ln>>>, <<<choose>>>, <<<remainder>>>, <<<permutate>>>:
+
+Q: If Amy's income increases by 4% annually, how many times will it multiply in 11 years?
+A: In 11 years, Amy's income will increase by 1.04^11 = <<<power>>>(1.04,11)<<<EOC>>>1.54<<<EOR>>> times. So, the answer is 1.54.
+
+Q: If a store sells 147 bananas today and 354 more bananas tomorrow, how many bananas does the store sell in total?
+A: The store sells 147 bananas today and 354 more bananas tomorrow, so the total number of bananas sold is 147+354=<<<add>>>(147,354)<<<EOC>>>501<<<EOR>>>. So, the answer is 501.
+
+Q: A man had 789.4 dollars in his wallet. He spent 11.99 dollars on a movie ticket. How much money does he have left now?
+A: The man had 789.4 dollars in his wallet and spent 11.99 dollars on a movie ticket, so he has 789.4-11.99=<<<subtract>>>(789.4,11.99)<<<EOC>>>777.41<<<EOR>>> dollars left. So, the answer is 777.41.
+
+Q: If a cake weighs 3.77 pounds and is divided into 13 equal pieces, how much does each piece weight?
+A: Each piece of the cake weighs 3.77/13=<<<divide>>>(3.77,13)<<<EOC>>>0.29<<<EOR>>> pounds. So, the answer is 0.29.
+
+
+Template offset:  448
+{'calls': ['<<<remainder>>>(7105,5783)<<<EOC>>>1322<<<EOR>>>'], 'func_name_ids': [32012], 'eoc_offsets': [13], 'text': 'Q: A baker is dividing 7105 pounds of dough into loaves of bread that weigh 5783 pounds each. How many pounds of dough will be left over if they cannot make a complete loaf of bread with the remaining dough?\nA: The amount of dough left over will be 7105 mod 5783=<<<remainder>>>(7105,5783)<<<EOC>>>1322<<<EOR>>> pounds.', 'token_len': 103}
+Total data:
+	Training: 611
+	Testing: 39
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+Parameter Offload: Total persistent parameters: 266240 in 65 params
+
+  | Name     | Type             | Params | Params per Device
+------------------------------------------------------------------
+0 | model    | AugmentedLM      | 6.7 B  | 6.7 B            
+1 | loss_fun | CrossEntropyLoss | 0      | 0                
+------------------------------------------------------------------
+262 M     Trainable params
+6.5 B     Non-trainable params
+6.7 B     Total params
+26,954.154Total estimated model params size (MB)
+Sanity Checking: |          | 0/? [00:00<?, ?it/s]/home/karypisg/romer333/anaconda3/envs/augmented-llm/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:441: The 'val_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=63` in the `DataLoader` to improve performance.
+['<<<remainder>>>', '(', '7', '1', '0', '5', ',', '5', '7', '8', '3', ')', '<<<EOC>>>']
+['<<<remainder>>>', '(', '7', '5', '5', '8', ',', '3', '7', '8', '8', ')', '<<<EOC>>>']
+Sanity Checking:   0%|          | 0/2 [00:00<?, ?it/s]Sanity Checking DataLoader 0:   0%|          | 0/2 [00:00<?, ?it/s]['<<<remainder>>>', '(', '4', '6', '9', '6', ',', '3', '2', '4', '5', ')', '<<<EOC>>>']
+[2024-04-06 21:47:54,209] [WARNING] [parameter_offload.py:87:_apply_to_tensors_only] A module has unknown inputs or outputs type (<class 'transformers.cache_utils.DynamicCache'>) and the tensors embedded in it cannot be detected. The ZeRO-3 hooks designed to trigger before or after backward pass of the module relies on knowing the input and output tensors and therefore may not get triggered properly.
+Sanity Checking DataLoader 0:  50%|█████     | 1/2 [00:00<00:00,  1.18it/s]['<<<gcd>>>', '(', '4', '2', '7', ',', '9', '0', '1', ')', '<<<EOC>>>']
+Sanity Checking DataLoader 0: 100%|██████████| 2/2 [00:01<00:00,  1.51it/s]                                                                           /home/karypisg/romer333/anaconda3/envs/augmented-llm/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:441: The 'train_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=63` in the `DataLoader` to improve performance.
+['<<<gcd>>>', '(', '1', '9', ',', '3', '0', '1', ')', '<<<EOC>>>']
+['<<<multiply>>>', '(', '3', '7', '0', '.', '3', '3', ',', '▁', '3', '2', '0', ')', '<<<EOC>>>']
+Training: |          | 0/? [00:00<?, ?it/s]Training:   0%|          | 0/611 [00:00<?, ?it/s]Epoch 0:   0%|          | 0/611 [00:00<?, ?it/s] Updating only the augmented embeddings
+['<<<log>>>', '(', '2', '3', '2', '0', '.', '0', '9', ')', '<<<EOC>>>']
+Epoch 0:   0%|          | 1/611 [00:00<07:54,  1.29it/s]Epoch 0:   0%|          | 1/611 [00:00<07:55,  1.28it/s, v_num=zhan]['<<<remainder>>>', '(', '2', '0', '7', '8', ',', '1', '9', '1', '8', ')', '<<<EOC>>>']
+/home/karypisg/romer333/anaconda3/envs/augmented-llm/lib/python3.10/site-packages/deepspeed/runtime/zero/stage3.py:1339: UserWarning: The torch.cuda.*DtypeTensor constructors are no longer recommended. It's best to use methods such as torch.tensor(data, dtype=*, device='cuda') to create tensors. (Triggered internally at /opt/conda/conda-bld/pytorch_1708025831440/work/torch/csrc/tensor/python_tensor.cpp:83.)
+  total_norm_cuda = get_accelerator().FloatTensor([float(total_norm)])
+Epoch 0:   0%|          | 2/611 [00:02<14:25,  0.70it/s, v_num=zhan]Epoch 0:   0%|          | 2/611 [00:02<14:26,  0.70it/s, v_num=zhan]['<<<remainder>>>', '(', '1', '5', '0', '1', ',', '6', '2', '8', ')', '<<<EOC>>>']
+Epoch 0:   0%|          | 3/611 [00:03<13:21,  0.76it/s, v_num=zhan]Epoch 0:   0%|          | 3/611 [00:03<13:21,  0.76it/s, v_num=zhan]['<<<log>>>', '(', '8', '8', '8', '8', '.', '3', '2', ')', '<<<EOC>>>']
+Epoch 0:   1%|          | 4/611 [00:05<12:43,  0.80it/s, v_num=zhan]Epoch 0:   1%|          | 4/611 [00:05<12:43,  0.79it/s, v_num=zhan]['<<<lcm>>>', '(', '5', '1', '2', ',', '9', '5', '2', ')', '<<<EOC>>>']
+Epoch 0:   1%|          | 5/611 [00:06<12:14,  0.83it/s, v_num=zhan]Epoch 0:   1%|          | 5/611 [00:06<12:14,  0.83it/s, v_num=zhan]['<<<sqrt>>>', '(', '9', '2', '8', '0', ')', '<<<EOC>>>']
+Epoch 0:   1%|          | 6/611 [00:07<11:50,  0.85it/s, v_num=zhan]Epoch 0:   1%|          | 6/611 [00:07<11:50,  0.85it/s, v_num=zhan]['<<<multiply>>>', '(', '3', '5', '5', ',', '▁', '4', '7', '4', ')', '<<<EOC>>>']
+Epoch 0:   1%|          | 7/611 [00:08<11:33,  0.87it/s, v_num=zhan]Epoch 0:   1%|          | 7/611 [00:08<11:33,  0.87it/s, v_num=zhan]['<<<multiply>>>', '(', '3', '4', ',', '▁', '3', '9', '5', ')', '<<<EOC>>>']
+Epoch 0:   1%|▏         | 8/611 [00:08<11:18,  0.89it/s, v_num=zhan]Epoch 0:   1%|▏         | 8/611 [00:08<11:18,  0.89it/s, v_num=zhan]['<<<divide>>>', '(', '6', '0', '6', ',', '▁', '5', '7', '4', ')', '<<<EOC>>>']
+Epoch 0:   1%|▏         | 9/611 [00:09<10:46,  0.93it/s, v_num=zhan]Epoch 0:   1%|▏         | 9/611 [00:09<10:46,  0.93it/s, v_num=zhan]['<<<multiply>>>', '(', '4', '4', '2', ',', '▁', '4', '8', ')', '<<<EOC>>>']
+Epoch 0:   2%|▏         | 10/611 [00:10<10:41,  0.94it/s, v_num=zhan]Epoch 0:   2%|▏         | 10/611 [00:10<10:41,  0.94it/s, v_num=zhan]['<<<permutate>>>', '(', '1', '0', ',', '3', ')', '<<<EOC>>>']
+Epoch 0:   2%|▏         | 11/611 [00:11<10:36,  0.94it/s, v_num=zhan]Epoch 0:   2%|▏         | 11/611 [00:11<10:36,  0.94it/s, v_num=zhan]['<<<log>>>', '(', '4', '5', '8', '2', '.', '2', '2', ')', '<<<EOC>>>']
+Epoch 0:   2%|▏         | 12/611 [00:12<10:31,  0.95it/s, v_num=zhan]Epoch 0:   2%|▏         | 12/611 [00:12<10:31,  0.95it/s, v_num=zhan]['<<<add>>>', '(', '2', '0', '1', ',', '▁', '3', '4', '9', ')', '<<<EOC>>>']
+Epoch 0:   2%|▏         | 13/611 [00:13<10:28,  0.95it/s, v_num=zhan]Epoch 0:   2%|▏         | 13/611 [00:13<10:28,  0.95it/s, v_num=zhan]['<<<log>>>', '(', '3', '3', '1', '9', '.', '4', '8', ')', '<<<EOC>>>']
+Epoch 0:   2%|▏         | 14/611 [00:14<10:28,  0.95it/s, v_num=zhan]Epoch 0:   2%|▏         | 14/611 [00:14<10:28,  0.95it/s, v_num=zhan]['<<<permutate>>>', '(', '3', ',', '2', ')', '<<<EOC>>>']
+Epoch 0:   2%|▏         | 15/611 [00:15<10:29,  0.95it/s, v_num=zhan]Epoch 0:   2%|▏         | 15/611 [00:15<10:29,  0.95it/s, v_num=zhan]['<<<multiply>>>', '(', '1', '3', '.', '1', '4', ',', '▁', '4', '9', '6', '.', '6', '2', ')', '<<<EOC>>>']
+Epoch 0:   3%|▎         | 16/611 [00:16<10:26,  0.95it/s, v_num=zhan]Epoch 0:   3%|▎         | 16/611 [00:16<10:26,  0.95it/s, v_num=zhan]['<<<lcm>>>', '(', '6', '9', '5', ',', '1', '5', '0', ',', '9', '6', '4', ',', '9', '4', '4', ')', '<<<EOC>>>']
+Epoch 0:   3%|▎         | 17/611 [00:17<10:21,  0.96it/s, v_num=zhan]Epoch 0:   3%|▎         | 17/611 [00:17<10:21,  0.96it/s, v_num=zhan]['<<<choose>>>', '(', '2', '0', ',', '8', ')', '<<<EOC>>>']
+Epoch 0:   3%|▎         | 18/611 [00:18<10:19,  0.96it/s, v_num=zhan]Epoch 0:   3%|▎         | 18/611 [00:18<10:19,  0.96it/s, v_num=zhan]['<<<add>>>', '(', '6', '5', ',', '▁', '1', '8', '7', ')', '<<<EOC>>>']
+Epoch 0:   3%|▎         | 19/611 [00:19<10:19,  0.96it/s, v_num=zhan]Epoch 0:   3%|▎         | 19/611 [00:19<10:19,  0.96it/s, v_num=zhan]['<<<add>>>', '(', '6', '4', ',', '▁', '4', '5', '8', ')', '<<<EOC>>>']
+Epoch 0:   3%|▎         | 20/611 [00:20<10:17,  0.96it/s, v_num=zhan]Epoch 0:   3%|▎         | 20/611 [00:20<10:17,  0.96it/s, v_num=zhan]['<<<divide>>>', '(', '4', '2', '5', '0', '.', '2', '3', ',', '▁', '1', '2', '5', '.', '1', '6', ')', '<<<EOC>>>']
+Epoch 0:   3%|▎         | 21/611 [00:21<10:14,  0.96it/s, v_num=zhan]Epoch 0:   3%|▎         | 21/611 [00:21<10:14,  0.96it/s, v_num=zhan]['<<<remainder>>>', '(', '5', '7', '6', '2', ',', '4', '6', '1', '2', ')', '<<<EOC>>>']
+Epoch 0:   4%|▎         | 22/611 [00:22<10:12,  0.96it/s, v_num=zhan]Epoch 0:   4%|▎         | 22/611 [00:22<10:12,  0.96it/s, v_num=zhan]['<<<add>>>', '(', '1', '6', '8', ',', '▁', '3', '0', '3', ')', '<<<EOC>>>']
+Epoch 0:   4%|▍         | 23/611 [00:23<10:09,  0.96it/s, v_num=zhan]Epoch 0:   4%|▍         | 23/611 [00:23<10:09,  0.96it/s, v_num=zhan]['<<<log>>>', '(', '3', '0', '3', '3', '.', '5', '7', ')', '<<<EOC>>>']
+Epoch 0:   4%|▍         | 24/611 [00:24<10:06,  0.97it/s, v_num=zhan]Epoch 0:   4%|▍         | 24/611 [00:24<10:06,  0.97it/s, v_num=zhan]['<<<add>>>', '(', '4', '2', '2', ',', '▁', '4', '4', '4', ')', '<<<EOC>>>']
+Epoch 0:   4%|▍         | 25/611 [00:25<09:56,  0.98it/s, v_num=zhan]Epoch 0:   4%|▍         | 25/611 [00:25<09:56,  0.98it/s, v_num=zhan]['<<<multiply>>>', '(', '4', '9', '4', ',', '▁', '4', '4', '1', '.', '9', '5', ')', '<<<EOC>>>']
+Epoch 0:   4%|▍         | 26/611 [00:26<09:48,  0.99it/s, v_num=zhan]Epoch 0:   4%|▍         | 26/611 [00:26<09:48,  0.99it/s, v_num=zhan]['<<<multiply>>>', '(', '4', '2', '0', '.', '5', '6', ',', '▁', '4', '2', '9', ')', '<<<EOC>>>']
+Epoch 0:   4%|▍         | 27/611 [00:27<09:47,  0.99it/s, v_num=zhan]Epoch 0:   4%|▍         | 27/611 [00:27<09:47,  0.99it/s, v_num=zhan]['<<<add>>>', '(', '9', '9', ',', '▁', '1', '3', '3', ')', '<<<EOC>>>']
+Epoch 0:   5%|▍         | 28/611 [00:28<09:46,  0.99it/s, v_num=zhan]Epoch 0:   5%|▍         | 28/611 [00:28<09:46,  0.99it/s, v_num=zhan]['<<<gcd>>>', '(', '7', '6', ',', '5', '2', '6', ')', '<<<EOC>>>']
+Epoch 0:   5%|▍         | 29/611 [00:29<09:44,  0.99it/s, v_num=zhan]Epoch 0:   5%|▍         | 29/611 [00:29<09:44,  0.99it/s, v_num=zhan]['<<<remainder>>>', '(', '9', '4', '3', '7', ',', '3', '9', '7', '0', ')', '<<<EOC>>>']
+Epoch 0:   5%|▍         | 30/611 [00:30<09:48,  0.99it/s, v_num=zhan]Epoch 0:   5%|▍         | 30/611 [00:30<09:48,  0.99it/s, v_num=zhan]['<<<divide>>>', '(', '3', '2', '0', '.', '2', '4', ',', '▁', '1', '0', '0', '.', '6', '8', ')', '<<<EOC>>>']
+Epoch 0:   5%|▌         | 31/611 [00:31<09:49,  0.98it/s, v_num=zhan]Epoch 0:   5%|▌         | 31/611 [00:31<09:49,  0.98it/s, v_num=zhan]['<<<log>>>', '(', '3', '4', '0', '8', ')', '<<<EOC>>>']
+Epoch 0:   5%|▌         | 32/611 [00:32<09:48,  0.98it/s, v_num=zhan]Epoch 0:   5%|▌         | 32/611 [00:32<09:48,  0.98it/s, v_num=zhan]['<<<ln>>>', '(', '9', '5', '2', '3', ')', '<<<EOC>>>']
+Epoch 0:   5%|▌         | 33/611 [00:33<09:47,  0.98it/s, v_num=zhan]Epoch 0:   5%|▌         | 33/611 [00:33<09:47,  0.98it/s, v_num=zhan]['<<<divide>>>', '(', '2', '0', '4', '1', '.', '0', '7', ',', '▁', '4', '6', '6', '4', '.', '5', '6', ')', '<<<EOC>>>']
+Epoch 0:   6%|▌         | 34/611 [00:34<09:45,  0.98it/s, v_num=zhan]Epoch 0:   6%|▌         | 34/611 [00:34<09:46,  0.98it/s, v_num=zhan]['<<<multiply>>>', '(', '3', '2', '7', '.', '9', '9', ',', '▁', '1', '4', ')', '<<<EOC>>>']
+Epoch 0:   6%|▌         | 35/611 [00:35<09:44,  0.99it/s, v_num=zhan]Epoch 0:   6%|▌         | 35/611 [00:35<09:44,  0.99it/s, v_num=zhan]['<<<power>>>', '(', '0', '.', '8', '2', ',', '▁', '8', ')', '<<<EOC>>>']
+Epoch 0:   6%|▌         | 36/611 [00:36<09:42,  0.99it/s, v_num=zhan]Epoch 0:   6%|▌         | 36/611 [00:36<09:42,  0.99it/s, v_num=zhan]['<<<permutate>>>', '(', '7', ',', '5', ')', '<<<EOC>>>']
+Epoch 0:   6%|▌         | 37/611 [00:37<09:40,  0.99it/s, v_num=zhan]Epoch 0:   6%|▌         | 37/611 [00:37<09:40,  0.99it/s, v_num=zhan]['<<<subtract>>>', '(', '3', '7', '7', ',', '▁', '6', '4', ')', '<<<EOC>>>']
+Epoch 0:   6%|▌         | 38/611 [00:38<09:39,  0.99it/s, v_num=zhan]Epoch 0:   6%|▌         | 38/611 [00:38<09:39,  0.99it/s, v_num=zhan]['<<<log>>>', '(', '2', '3', '3', '4', ')', '<<<EOC>>>']
+Epoch 0:   6%|▋         | 39/611 [00:39<09:37,  0.99it/s, v_num=zhan]Epoch 0:   6%|▋         | 39/611 [00:39<09:37,  0.99it/s, v_num=zhan]['<<<add>>>', '(', '2', '0', '8', ',', '▁', '1', '7', '6', ')', '<<<EOC>>>']
+Epoch 0:   7%|▋         | 40/611 [00:40<09:36,  0.99it/s, v_num=zhan]Epoch 0:   7%|▋         | 40/611 [00:40<09:36,  0.99it/s, v_num=zhan]['<<<remainder>>>', '(', '1', '1', '4', '7', ',', '4', '7', '5', ')', '<<<EOC>>>']
+Epoch 0:   7%|▋         | 41/611 [00:41<09:34,  0.99it/s, v_num=zhan]Epoch 0:   7%|▋         | 41/611 [00:41<09:34,  0.99it/s, v_num=zhan]['<<<sqrt>>>', '(', '7', '2', '2', '9', ')', '<<<EOC>>>']
+Epoch 0:   7%|▋         | 42/611 [00:42<09:33,  0.99it/s, v_num=zhan]Epoch 0:   7%|▋         | 42/611 [00:42<09:33,  0.99it/s, v_num=zhan]['<<<choose>>>', '(', '1', '8', ',', '3', ')', '<<<EOC>>>']
+Epoch 0:   7%|▋         | 43/611 [00:43<09:32,  0.99it/s, v_num=zhan]Epoch 0:   7%|▋         | 43/611 [00:43<09:32,  0.99it/s, v_num=zhan]['<<<ln>>>', '(', '2', '5', '8', '9', ')', '<<<EOC>>>']
+Epoch 0:   7%|▋         | 44/611 [00:44<09:31,  0.99it/s, v_num=zhan]Epoch 0:   7%|▋         | 44/611 [00:44<09:31,  0.99it/s, v_num=zhan]['<<<remainder>>>', '(', '9', '9', '6', '4', ',', '1', '6', '2', '1', ')', '<<<EOC>>>']
+Epoch 0:   7%|▋         | 45/611 [00:45<09:29,  0.99it/s, v_num=zhan]Epoch 0:   7%|▋         | 45/611 [00:45<09:29,  0.99it/s, v_num=zhan]['<<<lcm>>>', '(', '6', '0', '3', ',', '7', '7', '6', ')', '<<<EOC>>>']
+Epoch 0:   8%|▊         | 46/611 [00:46<09:28,  0.99it/s, v_num=zhan]Epoch 0:   8%|▊         | 46/611 [00:46<09:28,  0.99it/s, v_num=zhan]['<<<gcd>>>', '(', '2', '5', '2', ',', '3', '1', '6', ')', '<<<EOC>>>']
+Epoch 0:   8%|▊         | 47/611 [00:47<09:26,  0.99it/s, v_num=zhan]Epoch 0:   8%|▊         | 47/611 [00:47<09:26,  0.99it/s, v_num=zhan]['<<<divide>>>', '(', '6', '5', '5', '.', '1', '9', ',', '▁', '4', '4', '1', '.', '8', '1', ')', '<<<EOC>>>']
+Epoch 0:   8%|▊         | 48/611 [00:48<09:25,  1.00it/s, v_num=zhan]Epoch 0:   8%|▊         | 48/611 [00:48<09:25,  1.00it/s, v_num=zhan]['<<<lcm>>>', '(', '9', '2', '8', ',', '2', '6', '7', ')', '<<<EOC>>>']
+Epoch 0:   8%|▊         | 49/611 [00:49<09:24,  1.00it/s, v_num=zhan]Epoch 0:   8%|▊         | 49/611 [00:49<09:24,  1.00it/s, v_num=zhan]['<<<add>>>', '(', '1', '3', '9', ',', '▁', '9', '3', ')', '<<<EOC>>>']
+Epoch 0:   8%|▊         | 50/611 [00:50<09:22,  1.00it/s, v_num=zhan]Epoch 0:   8%|▊         | 50/611 [00:50<09:22,  1.00it/s, v_num=zhan]['<<<add>>>', '(', '4', '4', '6', '.', '8', '8', ',', '▁', '1', '4', '7', '.', '8', '6', ')', '<<<EOC>>>']
+Epoch 0:   8%|▊         | 51/611 [00:51<09:21,  1.00it/s, v_num=zhan]Epoch 0:   8%|▊         | 51/611 [00:51<09:21,  1.00it/s, v_num=zhan]['<<<permutate>>>', '(', '6', ',', '5', ')', '<<<EOC>>>']
+Epoch 0:   9%|▊         | 52/611 [00:52<09:20,  1.00it/s, v_num=zhan]Epoch 0:   9%|▊         | 52/611 [00:52<09:20,  1.00it/s, v_num=zhan]['<<<lcm>>>', '(', '3', '7', '4', ',', '8', '4', '0', ',', '2', '7', '3', ')', '<<<EOC>>>']
+Epoch 0:   9%|▊         | 53/611 [00:53<09:18,  1.00it/s, v_num=zhan]Epoch 0:   9%|▊         | 53/611 [00:53<09:18,  1.00it/s, v_num=zhan]['<<<ln>>>', '(', '3', '1', '7', '0', ')', '<<<EOC>>>']
+Epoch 0:   9%|▉         | 54/611 [00:54<09:17,  1.00it/s, v_num=zhan]Epoch 0:   9%|▉         | 54/611 [00:54<09:17,  1.00it/s, v_num=zhan]['<<<divide>>>', '(', '2', '9', '4', '.', '3', '4', ',', '▁', '1', '0', '9', ')', '<<<EOC>>>']
+Epoch 0:   9%|▉         | 55/611 [00:55<09:16,  1.00it/s, v_num=zhan]Epoch 0:   9%|▉         | 55/611 [00:55<09:16,  1.00it/s, v_num=zhan]['<<<sqrt>>>', '(', '2', '8', '7', '8', '.', '7', '3', ')', '<<<EOC>>>']
+Epoch 0:   9%|▉         | 56/611 [00:56<09:15,  1.00it/s, v_num=zhan]Epoch 0:   9%|▉         | 56/611 [00:56<09:15,  1.00it/s, v_num=zhan]['<<<permutate>>>', '(', '7', ',', '7', ')', '<<<EOC>>>']
+Epoch 0:   9%|▉         | 57/611 [00:56<09:13,  1.00it/s, v_num=zhan]Epoch 0:   9%|▉         | 57/611 [00:56<09:13,  1.00it/s, v_num=zhan]['<<<power>>>', '(', '7', ',', '▁-', '1', ')', '<<<EOC>>>']

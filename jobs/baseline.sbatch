@@ -8,9 +8,10 @@
 #SBATCH --mem=64G
 #SBATCH --time=24:00:00
 #SBATCH --tmp 200gb
+#SBATCH -o ./jobs/logs/slurm_%j.out # STDOUT
 
 # export CUDA_VISIBLE_DEVICES=0
 
 # Execute your Python script with command-line arguments
-/home/karypisg/romer333/anaconda3/envs/augmented-llm/bin/python3 validation_samples.py --config-name emb-exp-funcqa-aug-args
+/home/karypisg/romer333/anaconda3/envs/augmented-llm/bin/python -m torch.distributed.run --nproc_per_node 1 --master_port 1200 augmented_llama_train.py --config-name funcqa-oh
 

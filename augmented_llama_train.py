@@ -81,12 +81,8 @@ def main(config):
     trainer.fit(model, datamodule=data_module)
     
     if trainer.is_global_zero:
-        # magically converts the folder into a single lightning loadable pytorch file (for ZeRO 1,2 and 3)
         convert_zero_checkpoint_to_fp32_state_dict(
             checkpoint_callback.best_model_path, config.best_checkpoint_filepath)
-        # load check
-        # PLModel.load_from_checkpoint(config.best_checkpoint_filepath, tokenizer=tokenizer, model=_model)
-        # print("Re-loading successful")
     
     cleanup()
 
